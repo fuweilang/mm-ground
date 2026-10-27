@@ -1,0 +1,111 @@
+import { Body, Controller, Get, Header, Post, Query, Req, Res, UnauthorizedException } from '@nestjs/common';
+import { ConfigService } from '@nestjs/config';
+import { JwtService } from '@nestjs/jwt';
+import type { JWTPayload } from 'jose';
+import { Request, Response } from 'express';
+import { PrismaService } from '../prisma/prisma.service';
+import { JwtPayload } from '../auth/jwt.guard';
+import { OidcService } from './oidc.service';
+
+@Controller()
+export class OidcController {
+  constructor(
+    private oidc: OidcService,
+    private jwt: JwtService,
+    private prisma: PrismaService,
+    private config: ConfigService,
+  ) {}
+
+  @Get('oidc/.well-known/openid-configuration')
+  discovery(@Req() req: Request) {
+    return this.oidc.discovery(req);
+  }
+
+  @Get('oidc/jwks')
+  @Header('Cache-Control', 'no-store')
+  jwks() {
+    return this.oidc.jwks();
+  }
+
+  @Get('oidc/authorize')
+  async authorize(
+    @Query() query: Record<string, string>,
+    @Req() req: Request,
+    @Res() res: Response,
+  ) {
+    const {
+      response_type,
+      client_id,
+      redirect_uri,
+      state,
+      nonce,
+      code_challenge,
+      code_challenge_method,
+    } = query;
+    if (response_type !== 'code') return res.status(400).send('unsupported_response_type');
+    if (client_id !== this.oidc.clientId()) return res.status(400).send('invalid_client');
+    if (!redirect_uri || !this.oidc.isAllowedRedirect(redirect_uri)) {
+      return res.status(400).send('invalid_redirect_uri');
+    }
+    if (!state || !nonce || !code_challenge) return res.status(400).send('invalid_request');
+    if (code_challenge_method && code_challenge_method !== 'S256') {
+      return res.status(400).send('invalid_request');
+    }
+
+    const session = await this.userFromCookie(req);
+    const authorizeUrl = this.oidc.authorizeUrl(req);
+    if (!session) {
+      return res.redirect(this.oidc.loginRedirect(authorizeUrl, req.hostname, req.protocol));
+    }
+
+    const code = this.oidc.issueCode(session.user, {
+      nonce,
+      clientId: client_id,
+      redirectUri: redirect_uri,
+      codeChallenge: code_challenge,
+      issuer: this.oidc.issuer(req),
+      tenantId: session.tenantId,
+    });
+    const next = new URL(redirect_uri);
+    next.searchParams.set('code', code);
+    next.searchParams.set('state', state);
+    return res.redirect(next.toString());
+  }
+
+  @Post('oidc/token')
+  async token(@Req() req: Request, @Body() body: Record<string, string>) {
+    return this.oidc.exchange(body, req);
+  }
+
+  @Get('oidc/userinfo')
+  async userinfo(@Req() req: Request) {
+    const header = req.headers.authorization;
+    const token = header?.startsWith('Bearer ') ? header.slice(7) : '';
+    if (!token) throw new UnauthorizedException('invalid_token');
+    // 必须先验签再取 claims：decodeJwt 不验签，任何人都能伪造 token 冒充任意用户。
+    let claims: JWTPayload;
+    try {
+      claims = await this.oidc.verifyIdToken(token);
+    } catch {
+      throw new UnauthorizedException('invalid_token');
+    }
+    if (typeof claims.sub !== 'string') throw new UnauthorizedException('invalid_token');
+    return this.oidc.userinfo(claims.sub);
+  }
+
+  private async userFromCookie(req: Request) {
+    const cookieName = this.config.get<string>('COOKIE_NAME') ?? 'mammothai_access_token';
+    const token = req.cookies?.[cookieName] as string | undefined;
+    if (!token) return null;
+    try {
+      const payload = await this.jwt.verifyAsync<JwtPayload>(token);
+      // browser-sso 票据只用于换正式会话，不能当登录态直接用（与 JwtGuard 的检查一致）。
+      if (payload.purpose === 'browser-sso') return null;
+      const user = await this.prisma.user.findUnique({ where: { id: payload.sub } });
+      if (!user || user.status !== 'active') return null;
+      return { user, tenantId: payload.tenantId ?? null };
+    } catch {
+      return null;
+    }
+  }
+}
