@@ -1,4 +1,5 @@
 import { spawn, spawnSync } from "node:child_process";
+import fs from "node:fs";
 import net from "node:net";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
@@ -7,6 +8,7 @@ const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const desktopSrc = path.join(root, "../Octop/desktop/src");
 const binName = "猛犸智能体";
 const binPath = path.join(desktopSrc, "bin", binName);
+const appPath = path.join(desktopSrc, "bin", `${binName}.dev.app`);
 const octopPort = "8088";
 const pagePort = "5210";
 const pageUrl = `http://127.0.0.1:${pagePort}/`;
@@ -105,8 +107,37 @@ if (build.status !== 0) {
   process.exit(build.status ?? 1);
 }
 
-console.log("[desktop] launching", binPath);
-start("desktop", binPath, [], {
+function wrapDarwinDevApp() {
+  const macOS = path.join(appPath, "Contents", "MacOS");
+  const resources = path.join(appPath, "Contents", "Resources");
+  fs.mkdirSync(macOS, { recursive: true });
+  fs.mkdirSync(resources, { recursive: true });
+  fs.copyFileSync(
+    path.join(desktopSrc, "build/darwin/icons.icns"),
+    path.join(resources, "icons.icns"),
+  );
+  fs.copyFileSync(binPath, path.join(macOS, binName));
+  fs.chmodSync(path.join(macOS, binName), 0o755);
+  fs.copyFileSync(
+    path.join(desktopSrc, "build/darwin/Info.dev.plist"),
+    path.join(appPath, "Contents", "Info.plist"),
+  );
+  const sign = spawnSync(
+    "codesign",
+    ["--force", "--deep", "--sign", "-", appPath],
+    { stdio: "inherit" },
+  );
+  if (sign.status !== 0) {
+    console.warn("[desktop] codesign failed; Dock icon may stay generic");
+  }
+  return path.join(macOS, binName);
+}
+
+const launchPath =
+  process.platform === "darwin" ? wrapDarwinDevApp() : binPath;
+
+console.log("[desktop] launching", launchPath);
+start("desktop", launchPath, [], {
   cwd: desktopSrc,
   env: {
     ...process.env,

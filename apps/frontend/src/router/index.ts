@@ -14,7 +14,7 @@ const router = createRouter({
       path: '/admin',
       component: AppShell,
       children: [
-        { path: '', meta: { title: '总览' }, component: () => import('../views/admin/AdminHome.vue') },
+        { path: '', meta: { title: '概况' }, component: () => import('../views/admin/AdminHome.vue') },
         { path: 'users', meta: { title: '用户管理' }, component: () => import('../views/admin/AdminUsers.vue') },
         { path: 'roles', meta: { title: '角色管理' }, component: () => import('../views/admin/AdminRoles.vue') },
         {

@@ -176,6 +176,18 @@ async function startOctopSession() {
 
 async function goAfterLogin() {
   const next = nextParam();
+  // Desktop client SSO: always return to localhost next (never cloud /agent/chat).
+  if (next?.startsWith('http://') || next?.startsWith('https://')) {
+    try {
+      const u = new URL(next);
+      if (['127.0.0.1', 'localhost'].includes(u.hostname)) {
+        window.location.href = next;
+        return;
+      }
+    } catch {
+      /* fall through */
+    }
+  }
   if (next?.startsWith('/admin')) {
     if (auth.session?.user.isPlatformAdmin) {
       window.location.href = next;

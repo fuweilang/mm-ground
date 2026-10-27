@@ -120,7 +120,7 @@ const businessItems = [
 ];
 
 const platformItems = [
-  { path: '/admin', label: '总览', icon: LayoutDashboard },
+  { path: '/admin', label: '概况', icon: LayoutDashboard },
   { path: '/admin/users', label: '用户管理', icon: Users },
   { path: '/admin/roles', label: '角色管理', icon: Shield },
   { path: '/admin/enterprises', label: '企业管理', icon: Building2 },
