@@ -81,7 +81,7 @@ export class AuthService {
         .replace(/[^a-z0-9]+/g, '-')
         .replace(/^-|-$/g, '') || 'org';
     const slug = `${slugBase}-${Date.now().toString(36)}`;
-    const platform = await this.prisma.tenant.findUnique({ where: { slug: 'platform' } });
+    const platform = await this.prisma.tenant.findFirst({ where: { type: TenantType.PLATFORM } });
 
     return this.prisma.$transaction(async (tx) => {
       const tenant = await tx.tenant.create({
@@ -98,7 +98,7 @@ export class AuthService {
         },
       });
       await tx.orgMember.create({
-        data: { userId: user.id, tenantId: tenant.id, role: MemberRole.OWNER },
+        data: { userId: user.id, tenantId: tenant.id, role: MemberRole.ADMIN },
       });
       await tx.agentRef.create({
         data: {

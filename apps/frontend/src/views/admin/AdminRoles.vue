@@ -14,7 +14,7 @@
     </el-alert>
 
     <div class="role-toolbar">
-      <div class="role-search-wrap">
+      <div class="toolbar-left">
         <el-input
           v-model="keywordDraft"
           class="role-search"
@@ -25,13 +25,26 @@
           @input="onSearchInput"
           @keyup.enter="onSearchNow"
         />
+        <el-button class="toolbar-button" type="primary" :loading="loading" @click="onSearchNow">
+          搜索
+        </el-button>
+        <el-button class="toolbar-button" @click="onReset">
+          重置
+        </el-button>
       </div>
-      <el-button class="toolbar-button" type="primary" :loading="loading" @click="onSearchNow">
-        搜索
-      </el-button>
-      <el-button class="toolbar-button" @click="onReset">
-        重置
-      </el-button>
+      <div class="toolbar-right">
+        <el-tooltip
+          content="当前账号没有 portal.admin.roles.write，不能新建角色"
+          placement="top"
+          :disabled="canWrite"
+        >
+          <span>
+            <el-button class="toolbar-button" type="primary" :disabled="!canWrite" @click="openCreator">
+              新建角色
+            </el-button>
+          </span>
+        </el-tooltip>
+      </div>
     </div>
 
     <el-table
@@ -40,17 +53,27 @@
       class="role-table"
       header-cell-class-name="role-table-header"
     >
-      <el-table-column label="角色" min-width="180">
+      <el-table-column label="角色" min-width="150">
         <template #default="{ row }">
           <el-tag class="identity-tag" size="small" :style="roleTagStyle(row.key)">
             <span class="visual-dot" :style="{ backgroundColor: roleColor(row.key) }" />
             {{ row.name }}
           </el-tag>
-          <el-tag v-if="row.builtIn" size="small" type="info" class="sys-tag">系统</el-tag>
+        </template>
+      </el-table-column>
+      <el-table-column label="类型" width="110" align="center">
+        <template #default="{ row }">
+          <el-tag
+            size="small"
+            effect="light"
+            :type="row.builtIn ? 'info' : 'primary'"
+          >
+            {{ row.builtIn ? '系统内置' : '自定义' }}
+          </el-tag>
         </template>
       </el-table-column>
       <el-table-column prop="key" label="Key" width="150" show-overflow-tooltip />
-      <el-table-column label="范围" width="120">
+      <el-table-column label="范围" width="100">
         <template #default="{ row }">
           {{ row.scope === 'PLATFORM' ? '平台' : '企业预设' }}
         </template>
@@ -60,12 +83,33 @@
           {{ row.permissions.length }}
         </template>
       </el-table-column>
-      <el-table-column prop="description" label="说明" min-width="220" show-overflow-tooltip />
-      <el-table-column label="操作" width="120" fixed="right" align="center">
+      <el-table-column prop="description" label="说明" min-width="300" show-overflow-tooltip />
+      <el-table-column label="操作" width="210" fixed="right" align="center">
         <template #default="{ row }">
-          <el-button text type="primary" @click="openEditor(row)">
-            {{ canWrite && row.scope === 'PLATFORM' && !row.permissionsLocked ? '编辑' : '查看' }}
-          </el-button>
+          <div class="operation-buttons">
+            <el-button text type="primary" @click="openViewer(row)">
+              查看
+            </el-button>
+            <el-tooltip :content="editHint(row)" placement="top" :disabled="!editHint(row)">
+              <span>
+                <el-button text type="primary" :disabled="!canEditRow(row)" @click="openEditor(row)">
+                  编辑
+                </el-button>
+              </span>
+            </el-tooltip>
+            <el-tooltip :content="deleteHint(row)" placement="top" :disabled="!deleteHint(row)">
+              <span>
+                <el-button
+                  text
+                  type="danger"
+                  :disabled="!canDeleteRow(row)"
+                  @click="onDelete(row)"
+                >
+                  删除
+                </el-button>
+              </span>
+            </el-tooltip>
+          </div>
         </template>
       </el-table-column>
       <template #empty>
@@ -88,13 +132,22 @@
 
     <el-drawer
       v-model="drawerOpen"
-      :title="editing ? `${editing.name}（${editing.key}）` : '角色'"
-      size="560px"
+      :title="drawerTitle"
+      class="role-drawer"
+      size="760px"
       destroy-on-close
     >
-      <template v-if="editing">
+      <template v-if="editing || isCreating">
         <el-alert
-          v-if="editing.permissionsLocked"
+          v-if="editing?.scope === 'ORG_PRESET'"
+          type="warning"
+          :closable="false"
+          show-icon
+          title="企业预设角色：修改后会影响所有企业中使用该角色的成员。"
+          class="drawer-alert"
+        />
+        <el-alert
+          v-if="editing?.permissionsLocked"
           type="info"
           :closable="false"
           show-icon
@@ -102,7 +155,7 @@
           class="drawer-alert"
         />
         <el-form label-position="top">
-          <el-form-item label="显示名">
+          <el-form-item label="显示名" required>
             <el-input
               v-model="editName"
               maxlength="40"
@@ -126,20 +179,36 @@
           :key="group.category"
           class="chip-group"
         >
-          <div class="chip-group-label">{{ group.labelZh }}</div>
-          <div class="chip-wrap">
-            <button
-              v-for="item in group.items"
-              :key="item.key"
-              type="button"
-              class="perm-chip"
-              :class="{ active: selected.has(item.key), locked: !canEditPerms }"
-              :disabled="!canEditPerms"
-              :title="item.labelEn"
-              @click="togglePerm(item.key)"
+          <div class="chip-group-label">
+            <span>{{ group.labelZh }}</span>
+            <span class="chip-group-count">{{ groupSelectedCount(group) }}</span>
+          </div>
+          <div
+            v-for="(page, pageIndex) in groupPages(group)"
+            :key="`${group.category}-${page.page || 'flat'}-${pageIndex}`"
+            class="chip-page"
+          >
+            <div
+              v-if="page.pageZh"
+              class="chip-page-label"
             >
-              {{ item.labelZh }}
-            </button>
+              <span>{{ page.pageZh }}</span>
+              <span class="chip-group-count">{{ pageSelectedCount(page) }}</span>
+            </div>
+            <div class="chip-wrap">
+              <button
+                v-for="item in page.items"
+                :key="item.key"
+                type="button"
+                class="perm-chip"
+                :class="{ active: selected.has(item.key), locked: !canEditPerms }"
+                :disabled="!canEditPerms"
+                :title="item.labelEn"
+                @click="togglePerm(item.key)"
+              >
+                {{ item.labelZh }}
+              </button>
+            </div>
           </div>
         </div>
       </template>
@@ -158,25 +227,91 @@
         </div>
       </template>
     </el-drawer>
+
+    <el-dialog
+      v-model="viewOpen"
+      :title="viewing ? `查看角色 · ${viewing.name}` : '查看角色'"
+      class="role-dialog"
+      width="640px"
+      align-center
+    >
+      <template v-if="viewing">
+        <el-descriptions :column="2" border>
+          <el-descriptions-item label="Key">
+            {{ viewing.key }}
+          </el-descriptions-item>
+          <el-descriptions-item label="范围">
+            {{ viewing.scope === 'PLATFORM' ? '平台' : '企业预设' }}
+          </el-descriptions-item>
+          <el-descriptions-item label="权限数">
+            {{ viewing.permissions.length }}
+          </el-descriptions-item>
+          <el-descriptions-item label="关联用户">
+            {{ viewing.userCount }}
+          </el-descriptions-item>
+          <el-descriptions-item label="说明" :span="2">
+            {{ viewing.description || '-' }}
+          </el-descriptions-item>
+        </el-descriptions>
+
+        <div class="chip-section-title">权限包</div>
+        <div
+          v-for="group in viewGroups"
+          :key="group.category"
+          class="chip-group"
+        >
+          <div class="chip-group-label">
+            <span>{{ group.labelZh }}</span>
+            <span class="chip-group-count">{{ group.pages.flatMap((p) => p.items).length }} 项</span>
+          </div>
+          <div
+            v-for="(page, pageIndex) in group.pages"
+            :key="`view-${group.category}-${page.page || 'flat'}-${pageIndex}`"
+            class="chip-page"
+          >
+            <div
+              v-if="page.pageZh"
+              class="chip-page-label"
+            >
+              <span>{{ page.pageZh }}</span>
+              <span class="chip-group-count">{{ page.items.length }} 项</span>
+            </div>
+            <div class="chip-wrap">
+              <span
+                v-for="item in page.items"
+                :key="item.key"
+                class="perm-chip perm-chip-readonly"
+                :title="item.labelEn"
+              >
+                {{ item.labelZh }}
+              </span>
+            </div>
+          </div>
+        </div>
+      </template>
+      <template #footer>
+        <el-button @click="viewOpen = false">关闭</el-button>
+      </template>
+    </el-dialog>
   </section>
 </template>
 
 <script setup lang="ts">
 import { computed, onBeforeUnmount, onMounted, ref } from 'vue';
-import { ElMessage } from 'element-plus';
+import { ElMessage, ElMessageBox } from 'element-plus';
 import { Search } from 'lucide-vue-next';
 import {
   adminPermissionApi,
   adminRoleApi,
   type AdminRoleRow,
   type PermissionCatalogGroup,
+  type PermissionCatalogPage,
 } from '../../api/admin';
 import { useAuthStore } from '../../stores/auth';
 
 const ROLE_COLORS: Record<string, string> = {
   super_admin: '#7c3aed',
   platform_admin: '#1d4ed8',
-  org_owner: '#c2410c',
   org_admin: '#0891b2',
   org_member: '#15803d',
 };
@@ -194,6 +329,9 @@ const pageSize = ref(10);
 let searchTimer = 0;
 
 const drawerOpen = ref(false);
+const drawerMode = ref<'create' | 'edit'>('edit');
+const viewOpen = ref(false);
+const viewing = ref<AdminRoleRow | null>(null);
 const editing = ref<AdminRoleRow | null>(null);
 const editName = ref('');
 const editDescription = ref('');
@@ -206,18 +344,51 @@ const canWrite = computed(() => {
     || auth.session?.user.platformRoleKey === 'super_admin';
 });
 
+const isCreating = computed(() => drawerMode.value === 'create');
+
+const drawerTitle = computed(() => {
+  if (isCreating.value) return '新建角色';
+  return editing.value ? `${editing.value.name}（${editing.value.key}）` : '角色';
+});
+
 const canEditPerms = computed(() => {
-  if (!editing.value) return false;
   if (!canWrite.value) return false;
-  if (editing.value.permissionsLocked) return false;
-  return editing.value.scope === 'PLATFORM' && editing.value.editable;
+  if (isCreating.value) return true;
+  if (!editing.value) return false;
+  return editing.value.key !== 'super_admin';
 });
 
 const canEditMeta = computed(() => {
-  if (!editing.value) return false;
   if (!canWrite.value) return false;
-  return editing.value.scope === 'PLATFORM' && (editing.value.editable || editing.value.key === 'super_admin');
+  if (isCreating.value) return true;
+  if (!editing.value) return false;
+  return editing.value.key !== 'super_admin';
 });
+
+/** 操作列：有权写 + 行可编辑；super_admin 行仅改名称/说明。 */
+/** 操作列：除超级管理员外，所有角色都可编辑。 */
+function canEditRow(row: AdminRoleRow) {
+  if (!canWrite.value) return false;
+  return row.key !== 'super_admin';
+}
+
+function editHint(row: AdminRoleRow) {
+  if (!canWrite.value) return '当前账号没有 portal.admin.roles.write，只能查看';
+  if (row.key === 'super_admin') return '超级管理员拥有全部权限，不可编辑';
+  return '';
+}
+
+function canDeleteRow(row: AdminRoleRow) {
+  if (!canWrite.value) return false;
+  return !row.builtIn && row.userCount === 0;
+}
+
+function deleteHint(row: AdminRoleRow) {
+  if (!canWrite.value) return '当前账号没有 portal.admin.roles.write，不能删除';
+  if (row.builtIn) return '系统内置角色不可删除';
+  if (row.userCount > 0) return `还有 ${row.userCount} 个用户使用该角色，需先解绑`;
+  return '';
+}
 
 const hasActiveFilters = computed(() => Boolean(keyword.value));
 const emptyText = computed(() => (hasActiveFilters.value ? '没有符合条件的角色' : '暂无角色'));
@@ -236,6 +407,36 @@ const pagedRows = computed(() => {
   const start = (currentPage.value - 1) * pageSize.value;
   return filteredRows.value.slice(start, start + pageSize.value);
 });
+
+function groupPages(group: PermissionCatalogGroup): PermissionCatalogPage[] {
+  if (group.pages?.length) return group.pages;
+  return [{ page: null, pageZh: '', pageEn: '', items: group.items }];
+}
+
+const viewSelected = computed(() => new Set(viewing.value?.permissions ?? []));
+
+const viewGroups = computed(() => {
+  const granted = viewSelected.value;
+  return catalog.value
+    .map((group) => ({
+      ...group,
+      pages: groupPages(group)
+        .map((page) => ({ ...page, items: page.items.filter((item) => granted.has(item.key)) }))
+        .filter((page) => page.items.length > 0),
+    }))
+    .filter((group) => group.pages.length > 0);
+});
+
+function pageSelectedCount(page: PermissionCatalogPage, set: Set<string> = selected.value) {
+  const on = page.items.filter((item) => set.has(item.key)).length;
+  return `${on}/${page.items.length}`;
+}
+
+function groupSelectedCount(group: PermissionCatalogGroup, set: Set<string> = selected.value) {
+  const items = groupPages(group).flatMap((page) => page.items);
+  const on = items.filter((item) => set.has(item.key)).length;
+  return `${on}/${items.length}`;
+}
 
 function roleColor(key: string) {
   return ROLE_COLORS[key] || '#64748b';
@@ -267,7 +468,22 @@ async function reload() {
   }
 }
 
+function openViewer(row: AdminRoleRow) {
+  viewing.value = row;
+  viewOpen.value = true;
+}
+
+function openCreator() {
+  drawerMode.value = 'create';
+  editing.value = null;
+  editName.value = '';
+  editDescription.value = '';
+  selected.value = new Set();
+  drawerOpen.value = true;
+}
+
 function openEditor(row: AdminRoleRow) {
+  drawerMode.value = 'edit';
   editing.value = row;
   editName.value = row.name;
   editDescription.value = row.description || '';
@@ -284,10 +500,28 @@ function togglePerm(key: string) {
 }
 
 async function onSave() {
-  if (!editing.value) return;
+  if (!isCreating.value && !editing.value) return;
   if (!canEditPerms.value && !canEditMeta.value) return;
+  const name = editName.value.trim();
+  if (!name) {
+    ElMessage.warning('请填写角色名称');
+    return;
+  }
   saving.value = true;
   try {
+    if (isCreating.value) {
+      const created = await adminRoleApi.create({
+        name,
+        description: editDescription.value.trim() || null,
+        permissions: [...selected.value].sort(),
+      });
+      rows.value = [...rows.value, created];
+      drawerOpen.value = false;
+      ElMessage.success('角色已创建，权限将在用户下次登录后生效');
+      return;
+    }
+    const target = editing.value;
+    if (!target) return;
     const body: { name?: string; description?: string | null; permissions?: string[] } = {};
     if (canEditMeta.value) {
       body.name = editName.value.trim();
@@ -296,17 +530,37 @@ async function onSave() {
     if (canEditPerms.value) {
       body.permissions = [...selected.value].sort();
     }
-    const updated = await adminRoleApi.update(editing.value.id, body);
+    const updated = await adminRoleApi.update(target.id, body);
     const idx = rows.value.findIndex((r) => r.id === updated.id);
     if (idx >= 0) rows.value[idx] = updated;
     editing.value = updated;
     selected.value = new Set(updated.permissions);
-    ElMessage.success('已保存');
+    ElMessage.success('已保存，权限变更将在相关用户下次登录后生效');
     drawerOpen.value = false;
   } catch (e) {
     ElMessage.error(e instanceof Error ? e.message : '保存失败');
   } finally {
     saving.value = false;
+  }
+}
+
+async function onDelete(row: AdminRoleRow) {
+  try {
+    await ElMessageBox.confirm(
+      `删除后不可恢复，确定删除角色「${row.name}」？`,
+      '删除角色',
+      { type: 'warning', confirmButtonText: '删除', cancelButtonText: '取消' },
+    );
+  } catch {
+    return;
+  }
+  try {
+    await adminRoleApi.remove(row.id);
+    rows.value = rows.value.filter((item) => item.id !== row.id);
+    if (editing.value?.id === row.id) drawerOpen.value = false;
+    ElMessage.success('角色已删除');
+  } catch (e) {
+    ElMessage.error(e instanceof Error ? e.message : '删除失败');
   }
 }
 
@@ -367,22 +621,30 @@ onBeforeUnmount(() => {
   align-items: center;
   display: flex;
   flex-wrap: nowrap;
-  gap: 10px;
-  overflow-x: auto;
+  gap: 16px;
+  justify-content: space-between;
 }
 
-.role-search-wrap {
+.toolbar-left,
+.toolbar-right {
   align-items: center;
   display: flex;
-  flex: 1 1 auto;
   gap: 10px;
   min-width: 0;
+}
+
+.toolbar-left {
+  flex: 1 1 auto;
+}
+
+.toolbar-right {
+  flex: 0 0 auto;
 }
 
 .role-search {
   flex: 0 0 auto;
   min-width: 0;
-  width: 210px;
+  width: 240px;
 }
 
 .toolbar-button {
@@ -401,9 +663,6 @@ onBeforeUnmount(() => {
   gap: 7px;
 }
 
-.sys-tag {
-  margin-left: 8px;
-}
 
 .visual-dot {
   border-radius: 50%;
@@ -434,9 +693,36 @@ onBeforeUnmount(() => {
 }
 
 .chip-group-label {
+  align-items: center;
   color: #64748b;
+  display: flex;
   font-size: 12px;
+  font-weight: 600;
+  gap: 8px;
   margin-bottom: 8px;
+}
+
+.chip-group-count {
+  color: #94a3b8;
+  font-weight: 500;
+}
+
+.chip-page {
+  margin-bottom: 10px;
+}
+
+.chip-page:last-child {
+  margin-bottom: 0;
+}
+
+.chip-page-label {
+  align-items: center;
+  color: #475569;
+  display: flex;
+  font-size: 12px;
+  font-weight: 600;
+  gap: 8px;
+  margin: 0 0 6px;
 }
 
 .chip-wrap {
@@ -478,6 +764,19 @@ onBeforeUnmount(() => {
   gap: 8px;
 }
 
+.operation-buttons {
+  align-items: center;
+  display: flex;
+  gap: 4px;
+  justify-content: center;
+  white-space: nowrap;
+}
+
+.operation-buttons :deep(.el-button + .el-button) {
+  margin-left: 0;
+}
+
+
 :deep(.role-table-header) {
   background: #f8fafc !important;
   color: #333946;
@@ -497,9 +796,14 @@ onBeforeUnmount(() => {
     overflow-x: visible;
   }
 
-  .role-search-wrap {
+  .toolbar-left,
+  .toolbar-right {
     flex-direction: column;
     width: 100%;
+  }
+
+  .role-toolbar {
+    align-items: stretch;
   }
 
   .role-search,
@@ -510,6 +814,65 @@ onBeforeUnmount(() => {
   .role-pagination {
     justify-content: flex-start;
     overflow-x: auto;
+  }
+}
+</style>
+
+<!-- 查看弹窗渲染在 body（teleport）下，作用域样式无法命中根节点，这里用全局样式 -->
+<style>
+.role-dialog {
+  display: flex;
+  flex-direction: column;
+  margin: auto;
+  max-height: calc(100vh - 64px);
+  max-width: calc(100vw - 32px);
+  padding: 0;
+}
+
+.role-dialog .el-dialog__header {
+  border-bottom: 1px solid #dfe5ef;
+  margin-right: 0;
+  padding: 18px 24px;
+}
+
+.role-dialog .el-dialog__title {
+  color: #333946;
+  font-size: 16px;
+  font-weight: 600;
+}
+
+.role-dialog .el-dialog__body {
+  color: #333946;
+  flex: 1;
+  font-size: 13px;
+  min-height: 0;
+  overflow-y: auto;
+  padding: 22px 24px 8px;
+}
+
+.role-dialog .el-dialog__footer {
+  border-top: 1px solid #dfe5ef;
+  padding: 14px 24px;
+}
+
+.role-dialog .el-descriptions__label {
+  background: #f8fafc;
+  color: #667085;
+  font-weight: 400;
+  width: 96px;
+}
+
+.role-dialog .el-descriptions__cell {
+  padding: 10px 14px;
+}
+
+.role-dialog .chip-section-title {
+  margin-top: 18px;
+}
+
+@media (max-width: 768px) {
+  .role-dialog {
+    width: calc(100vw - 32px) !important;
   }
 }
 </style>

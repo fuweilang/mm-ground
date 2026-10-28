@@ -14,6 +14,8 @@ export type AdminUserRow = {
   email: string | null;
   isPlatformAdmin: boolean;
   platformRoleKey?: string | null;
+  platformRoleName?: string | null;
+  platformRoleScope?: 'PLATFORM' | 'ORG_PRESET' | null;
   status: string;
   createdAt: string;
   tenants: AdminUserTenant[];
@@ -27,6 +29,18 @@ export type AdminEnterpriseRow = {
   status: string;
   memberCount: number;
   createdAt: string;
+  admins: Array<{ id: string; name: string; phone: string }>;
+  adminCount: number;
+};
+
+export type AdminEnterpriseDeletionImpact = {
+  tenant: { id: string; name: string; slug: string };
+  memberCount: number;
+  deletedUsers: Array<{ id: string; name: string; phone: string }>;
+  unboundMemberCount: number;
+  usageEventCount: number;
+  blockedReasons: string[];
+  canDelete: boolean;
 };
 
 export type AdminUserCreate = {
@@ -35,15 +49,16 @@ export type AdminUserCreate = {
   password: string;
   isPlatformAdmin: boolean;
   tenantId?: string;
-  platformRoleKey?: 'super_admin' | 'platform_admin';
+  platformRoleKey?: string;
 };
 
 export type AdminUserUpdate = {
   name?: string;
   isPlatformAdmin?: boolean;
   status?: string;
-  password?: string;
-  platformRoleKey?: 'super_admin' | 'platform_admin' | null;
+  platformRoleKey?: string | null;
+  /** null = 解绑全部企业。 */
+  tenantId?: string | null;
 };
 
 export type AdminRoleRow = {
@@ -59,18 +74,28 @@ export type AdminRoleRow = {
   userCount: number;
 };
 
+export type PermissionCatalogChip = {
+  key: string;
+  labelZh: string;
+  labelEn: string;
+  page?: string;
+  pageZh?: string;
+  pageEn?: string;
+};
+
+export type PermissionCatalogPage = {
+  page: string | null;
+  pageZh: string;
+  pageEn: string;
+  items: PermissionCatalogChip[];
+};
+
 export type PermissionCatalogGroup = {
   category: string;
   labelZh: string;
   labelEn: string;
-  items: Array<{
-    key: string;
-    labelZh: string;
-    labelEn: string;
-    page?: string;
-    pageZh?: string;
-    pageEn?: string;
-  }>;
+  items: PermissionCatalogChip[];
+  pages?: PermissionCatalogPage[];
 };
 
 export type AdminEnterpriseCreate = {
@@ -86,11 +111,12 @@ export type AdminEnterpriseUpdate = {
 };
 
 export const adminUserApi = {
-  list: (params: { keyword?: string; role?: '' | 'admin' | 'user'; status?: string } = {}) => {
+  list: (params: { keyword?: string; role?: '' | 'admin' | 'user'; status?: string; enterpriseId?: string } = {}) => {
     const qs = new URLSearchParams();
     if (params.keyword) qs.set('keyword', params.keyword);
     if (params.role) qs.set('role', params.role);
     if (params.status) qs.set('status', params.status);
+    if (params.enterpriseId) qs.set('enterpriseId', params.enterpriseId);
     const query = qs.toString();
     return adminHttp<AdminUserRow[]>(`/users${query ? `?${query}` : ''}`);
   },
@@ -98,6 +124,11 @@ export const adminUserApi = {
     adminHttp<AdminUserRow>('/users', { method: 'POST', body: JSON.stringify(body) }),
   update: (id: string, body: AdminUserUpdate) =>
     adminHttp<AdminUserRow>(`/users/${id}`, { method: 'PATCH', body: JSON.stringify(body) }),
+  changePassword: (id: string, password: string) =>
+    adminHttp<AdminUserRow>(`/users/${id}/password`, {
+      method: 'PATCH',
+      body: JSON.stringify({ password }),
+    }),
   deactivate: (id: string) => adminHttp<AdminUserRow>(`/users/${id}`, { method: 'DELETE' }),
   remove: (id: string) => adminHttp<{ ok: boolean }>(`/users/${id}/delete`, { method: 'POST' }),
 };
@@ -109,6 +140,8 @@ export const adminEnterpriseApi = {
   update: (id: string, body: AdminEnterpriseUpdate) =>
     adminHttp<AdminEnterpriseRow>(`/enterprises/${id}`, { method: 'PATCH', body: JSON.stringify(body) }),
   remove: (id: string) => adminHttp<{ ok: boolean }>(`/enterprises/${id}`, { method: 'DELETE' }),
+  deletionImpact: (id: string) =>
+    adminHttp<AdminEnterpriseDeletionImpact>(`/enterprises/${id}/deletion-impact`),
 };
 export const adminRoleApi = {
   list: (params: { keyword?: string } = {}) => {
@@ -118,8 +151,11 @@ export const adminRoleApi = {
     return adminHttp<AdminRoleRow[]>(`/roles${query ? `?${query}` : ''}`);
   },
   get: (id: string) => adminHttp<AdminRoleRow>(`/roles/${id}`),
+  create: (body: { name: string; description?: string | null; permissions?: string[] }) =>
+    adminHttp<AdminRoleRow>('/roles', { method: 'POST', body: JSON.stringify(body) }),
   update: (id: string, body: { name?: string; description?: string | null; permissions?: string[] }) =>
     adminHttp<AdminRoleRow>(`/roles/${id}`, { method: 'PATCH', body: JSON.stringify(body) }),
+  remove: (id: string) => adminHttp<{ ok: boolean }>(`/roles/${id}`, { method: 'DELETE' }),
 };
 
 export const adminPermissionApi = {

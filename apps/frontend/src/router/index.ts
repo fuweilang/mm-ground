@@ -4,6 +4,8 @@ import { canAccessAdmin, canAccessConsole } from '@mammoth/shared';
 import { useAuthStore } from '../stores/auth';
 
 const AGENT_HOME = '/agent/chat';
+/** 本次整页加载是否已为总后台刷新过会话权限。 */
+let adminSessionRefreshed = false;
 const AppShell = () => import('../layouts/AppShell.vue');
 
 const router = createRouter({
@@ -52,6 +54,16 @@ router.beforeEach(async (to) => {
 
   const auth = useAuthStore();
   if (!auth.session) {
+    try {
+      await auth.load();
+    } catch {
+      return '/login';
+    }
+  }
+
+  // 总后台权限按角色实时计算：每次整页加载首次进 /admin 时刷新一次会话，避免改完角色后仍用旧权限。
+  if (to.path.startsWith('/admin') && !adminSessionRefreshed) {
+    adminSessionRefreshed = true;
     try {
       await auth.load();
     } catch {

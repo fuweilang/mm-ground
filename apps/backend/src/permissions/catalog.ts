@@ -71,12 +71,32 @@ export const OCTOP_PERMISSIONS: PermissionDef[] = [
   p('channels', 'settings', '通道', 'Channels'),
   p('connectors', 'settings', '连接器', 'Connectors'),
   p('skill_packages', 'settings', '技能包', 'Skill Packages'),
-  p('knowledge_bases', 'settings', '知识库', 'Knowledge Base'),
+  p('knowledge_bases', 'settings', '知识库', 'Knowledge Base', {
+    page: 'knowledge-bases',
+    pageZh: '知识库',
+    pageEn: 'Knowledge Base',
+  }),
 
-  p('terminal', 'control', '工作台/终端', 'Workbench / Terminal'),
-  p('browser', 'control', '工作台/浏览器', 'Workbench / Browser'),
-  p('desktop', 'control', '远程桌面', 'Remote Desktop'),
-  p('mobile', 'control', '远程手机', 'Remote Phone'),
+  p('terminal', 'control', '工作台/终端', 'Workbench / Terminal', {
+    page: 'workbench',
+    pageZh: '工作台',
+    pageEn: 'Workbench',
+  }),
+  p('browser', 'control', '工作台/浏览器', 'Workbench / Browser', {
+    page: 'workbench',
+    pageZh: '工作台',
+    pageEn: 'Workbench',
+  }),
+  p('desktop', 'control', '远程桌面', 'Remote Desktop', {
+    page: 'remote-desktop',
+    pageZh: '远程桌面',
+    pageEn: 'Remote Desktop',
+  }),
+  p('mobile', 'control', '远程手机', 'Remote Phone', {
+    page: 'remote-desktop',
+    pageZh: '远程桌面',
+    pageEn: 'Remote Desktop',
+  }),
 
   p('users', 'admin', '用户管理', 'User management', {
     page: 'users',
@@ -103,7 +123,11 @@ export const OCTOP_PERMISSIONS: PermissionDef[] = [
     pageZh: '模型',
     pageEn: 'Models',
   }),
-  p('storage_backends', 'admin', '存储', 'Storage'),
+  p('storage_backends', 'admin', '存储', 'Storage', {
+    page: 'storage',
+    pageZh: '存储',
+    pageEn: 'Storage',
+  }),
   p('plugins', 'admin', '已安装', 'Installed', {
     page: 'plugins',
     pageZh: '插件',
@@ -130,9 +154,9 @@ export const OCTOP_PERMISSIONS: PermissionDef[] = [
     pageEn: 'Models',
   }),
   p('knowledge_settings', 'admin', '知识库设置', 'Knowledge-base settings', {
-    page: 'advanced',
-    pageZh: '应用设置',
-    pageEn: 'App settings',
+    page: 'knowledge-bases',
+    pageZh: '知识库',
+    pageEn: 'Knowledge Base',
   }),
   p('voice', 'admin', '语音模型', 'Voice models', {
     page: 'models',
@@ -228,7 +252,6 @@ export const PORTAL_CONSOLE_KEYS = PORTAL_PERMISSIONS.filter((d) =>
 export const BUILTIN_ROLE_KEYS = [
   'super_admin',
   'platform_admin',
-  'org_owner',
   'org_admin',
   'org_member',
 ] as const;
@@ -254,11 +277,11 @@ export const ROLE_PERMISSION_PACKS: Record<BuiltinRoleKey, string[]> = {
     'portal.admin.roles.read',
     ...BUSINESS_MODULE_KEYS,
   ]),
-  org_owner: uniqSorted([...OWNER_OCTOP_KEYS, ...PORTAL_CONSOLE_KEYS]),
+  // 企业侧只保留「企业管理员 / 企业成员」两档：管理员=原 owner 全量能力
   org_admin: uniqSorted([
+    ...OWNER_OCTOP_KEYS,
     ...BUSINESS_MODULE_KEYS,
-    'portal.console.access',
-    'portal.console.members',
+    ...PORTAL_CONSOLE_KEYS,
   ]),
   org_member: uniqSorted([...BASELINE_PERMISSION_KEYS]),
 };
@@ -274,31 +297,25 @@ export const ROLE_META: Record<
 > = {
   super_admin: {
     name: '超级管理员',
-    description: '平台超管：Catalog 全量权限（含 roles.write）',
+    description: '系统最高权限：平台后台全部功能，可管理所有企业、用户和角色。建议只给 1–2 位负责人。',
     scope: 'PLATFORM',
     editable: false,
   },
   platform_admin: {
     name: '平台管理员',
-    description: '总后台用户/企业/角色只读；无 roles.write',
+    description: '平台运营：可管理企业和用户，也能使用业务功能；不能修改角色权限，不能进入企业后台。',
     scope: 'PLATFORM',
     editable: true,
   },
-  org_owner: {
-    name: '企业所有者',
-    description: '企业控制台全开 + Octop 业务/控制模块',
-    scope: 'ORG_PRESET',
-    editable: false,
-  },
   org_admin: {
     name: '企业管理员',
-    description: '业务模块 + console 准入与成员管理',
+    description: '企业管理员：企业后台和业务功能全部可用，可管理成员、企业设置与用量。',
     scope: 'ORG_PRESET',
     editable: false,
   },
   org_member: {
     name: '企业成员',
-    description: 'BASELINE（nav+settings）；无 console',
+    description: '普通员工：可使用智能体、知识库等业务功能并修改个人设置，不能管理成员或企业配置。',
     scope: 'ORG_PRESET',
     editable: false,
   },
@@ -337,44 +354,202 @@ export function validatePermissionKeys(keys: string[]): string[] {
   return out;
 }
 
+export interface CatalogChipItem {
+  key: string;
+  labelZh: string;
+  labelEn: string;
+  page?: string;
+  pageZh?: string;
+  pageEn?: string;
+}
+
+export interface CatalogPageBlock {
+  /** null = flat chips under the category (no page subtitle) */
+  page: string | null;
+  pageZh: string;
+  pageEn: string;
+  items: CatalogChipItem[];
+}
+
 export interface CatalogGroup {
   category: PermissionCategory;
   labelZh: string;
   labelEn: string;
-  items: Array<{
-    key: string;
-    labelZh: string;
-    labelEn: string;
-    page?: string;
-    pageZh?: string;
-    pageEn?: string;
-  }>;
+  /** Flat list (compat); same keys as pages flattened. */
+  items: CatalogChipItem[];
+  /** Octop-aligned page blocks for chip pickers. */
+  pages: CatalogPageBlock[];
 }
 
-/** Grouped catalog for chip pickers. */
+/**
+ * Display layout aligned with Octop PermissionCheckboxPicker:
+ * category → optional page subtitle → chips.
+ * `knowledge_settings` sits with `knowledge_bases` under 知识库 (settings),
+ * even though its catalog category remains `admin` for baseline packs.
+ */
+const PICKER_LAYOUT: readonly {
+  category: PermissionCategory;
+  pages: readonly { page: string | null; pageZh: string; pageEn: string; keys: readonly string[] }[];
+}[] = [
+  {
+    category: 'nav',
+    pages: [{ page: null, pageZh: '', pageEn: '', keys: ['experts', 'tasks', 'token_usage'] }],
+  },
+  {
+    category: 'settings',
+    pages: [
+      {
+        page: 'personalization',
+        pageZh: '个性化',
+        pageEn: 'Personalization',
+        keys: ['skills', 'subagents', 'tools', 'agent_plugins', 'mbti', 'memory'],
+      },
+      { page: null, pageZh: '', pageEn: '', keys: ['channels', 'connectors', 'skill_packages'] },
+      {
+        page: 'knowledge-bases',
+        pageZh: '知识库',
+        pageEn: 'Knowledge Base',
+        keys: ['knowledge_bases', 'knowledge_settings'],
+      },
+    ],
+  },
+  {
+    category: 'control',
+    pages: [
+      {
+        page: 'workbench',
+        pageZh: '工作台',
+        pageEn: 'Workbench',
+        keys: ['terminal', 'browser'],
+      },
+      {
+        page: 'remote-desktop',
+        pageZh: '远程桌面',
+        pageEn: 'Remote Desktop',
+        keys: ['desktop', 'mobile'],
+      },
+    ],
+  },
+  {
+    category: 'admin',
+    pages: [
+      { page: 'users', pageZh: '用户', pageEn: 'Users', keys: ['users', 'sso'] },
+      {
+        page: 'models',
+        pageZh: '模型',
+        pageEn: 'Models',
+        keys: ['providers', 'ollama_models', 'onnx_models', 'search', 'voice'],
+      },
+      { page: 'storage', pageZh: '存储', pageEn: 'Storage', keys: ['storage_backends'] },
+      { page: 'plugins', pageZh: '插件', pageEn: 'Plugins', keys: ['plugins'] },
+      {
+        page: 'security',
+        pageZh: '安全防护',
+        pageEn: 'Security',
+        keys: ['security', 'admin_console'],
+      },
+      {
+        page: 'advanced',
+        pageZh: '应用设置',
+        pageEn: 'App settings',
+        keys: ['envs', 'observability', 'backup', 'tls', 'captcha', 'update'],
+      },
+    ],
+  },
+  {
+    category: 'portal_admin',
+    pages: [
+      {
+        page: null,
+        pageZh: '',
+        pageEn: '',
+        keys: [
+          'portal.admin.access',
+          'portal.admin.users',
+          'portal.admin.enterprises',
+          'portal.admin.roles.read',
+          'portal.admin.roles.write',
+        ],
+      },
+    ],
+  },
+  {
+    category: 'portal_console',
+    pages: [
+      {
+        page: null,
+        pageZh: '',
+        pageEn: '',
+        keys: [
+          'portal.console.access',
+          'portal.console.members',
+          'portal.console.settings',
+        ],
+      },
+    ],
+  },
+];
+
+function chipFromDef(d: PermissionDef): CatalogChipItem {
+  return {
+    key: d.key,
+    labelZh: d.labelZh,
+    labelEn: d.labelEn,
+    page: d.page,
+    pageZh: d.pageZh,
+    pageEn: d.pageEn,
+  };
+}
+
+/** Grouped catalog for chip pickers (Octop page taxonomy). */
 export function getCatalogGrouped(): CatalogGroup[] {
-  const order: PermissionCategory[] = [
-    'nav',
-    'settings',
-    'control',
-    'admin',
-    'portal_admin',
-    'portal_console',
-  ];
-  return order.map((category) => {
-    const labels = CATEGORY_LABELS[category];
-    return {
-      category,
-      labelZh: labels.labelZh,
-      labelEn: labels.labelEn,
-      items: PERMISSION_CATALOG.filter((d) => d.category === category).map((d) => ({
-        key: d.key,
-        labelZh: d.labelZh,
-        labelEn: d.labelEn,
-        page: d.page,
-        pageZh: d.pageZh,
-        pageEn: d.pageEn,
-      })),
-    };
-  });
+  const byKey = new Map(PERMISSION_CATALOG.map((d) => [d.key, d]));
+  const covered = new Set<string>();
+  const groups: CatalogGroup[] = [];
+
+  for (const section of PICKER_LAYOUT) {
+    const labels = CATEGORY_LABELS[section.category];
+    const pages: CatalogPageBlock[] = [];
+    const items: CatalogChipItem[] = [];
+    for (const block of section.pages) {
+      const blockItems: CatalogChipItem[] = [];
+      for (const key of block.keys) {
+        const def = byKey.get(key);
+        if (!def) continue;
+        covered.add(key);
+        const chip = chipFromDef(def);
+        blockItems.push(chip);
+        items.push(chip);
+      }
+      if (blockItems.length) {
+        pages.push({
+          page: block.page,
+          pageZh: block.pageZh,
+          pageEn: block.pageEn,
+          items: blockItems,
+        });
+      }
+    }
+    if (items.length) {
+      groups.push({
+        category: section.category,
+        labelZh: labels.labelZh,
+        labelEn: labels.labelEn,
+        items,
+        pages,
+      });
+    }
+  }
+
+  const orphans = PERMISSION_CATALOG.filter((d) => !covered.has(d.key)).map(chipFromDef);
+  if (orphans.length) {
+    groups.push({
+      category: 'admin',
+      labelZh: '其他',
+      labelEn: 'Other',
+      items: orphans,
+      pages: [{ page: null, pageZh: '', pageEn: '', items: orphans }],
+    });
+  }
+  return groups;
 }

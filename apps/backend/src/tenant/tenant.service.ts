@@ -35,7 +35,7 @@ export class TenantService {
       const membership = await this.prisma.orgMember.findUnique({
         where: { userId_tenantId: { userId: user.id, tenantId: parentId } },
       });
-      if (!membership || (membership.role !== MemberRole.OWNER && membership.role !== MemberRole.ADMIN)) {
+      if (!membership || membership.role !== MemberRole.ADMIN) {
         throw new ForbiddenException('无权在该组织下创建');
       }
       if (dto.type !== TenantType.ENTERPRISE) {

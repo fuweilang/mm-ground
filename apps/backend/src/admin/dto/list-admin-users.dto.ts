@@ -13,4 +13,9 @@ export class ListAdminUsersDto {
   @IsOptional()
   @IsString()
   status?: string;
+
+  /** 只返回属于该企业的用户（org_member.tenantId）。 */
+  @IsOptional()
+  @IsString()
+  enterpriseId?: string;
 }

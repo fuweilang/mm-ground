@@ -1,4 +1,5 @@
 import { IsBoolean, IsIn, IsOptional, IsString, Matches, MinLength } from 'class-validator';
+import { BUILTIN_ROLE_KEYS } from '../../permissions/catalog';
 
 export class CreateAdminUserDto {
   @IsString()
@@ -19,8 +20,8 @@ export class CreateAdminUserDto {
   @IsString()
   tenantId?: string;
 
-  /** Optional; when isPlatformAdmin, defaults to platform_admin. */
+  /** Optional Role.key; when isPlatformAdmin and omitted, defaults to platform_admin. */
   @IsOptional()
-  @IsIn(['super_admin', 'platform_admin'])
-  platformRoleKey?: 'super_admin' | 'platform_admin';
+  @IsIn([...BUILTIN_ROLE_KEYS])
+  platformRoleKey?: (typeof BUILTIN_ROLE_KEYS)[number];
 }

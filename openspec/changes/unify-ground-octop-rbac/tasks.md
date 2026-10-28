@@ -36,6 +36,7 @@
 
 - [x] 角色列表/详情/更新权限包（一期以编辑内置平台角色为主；`super_admin` 权限只读全开）
 - [x] 用户创建/编辑支持选择平台角色
+- [x] `/admin/users` 独立改密：行内按钮 + 弹窗；编辑去掉密码；`PATCH .../password`；非超管不可改超管密码
 - [x] `AdminRoles.vue` 改为真数据：表格/卡片 + permChip（参考 Octop PermissionCheckboxPicker，Element Plus 重做）
 - [x] 交互：loading / 空 / 错误重试 / 无 write 只读 / 保存中防抖
 - [ ] **验收要点**：静态两行消失；改 `platform_admin` chip 保存后再进页仍在；无 write 的账号看不到保存

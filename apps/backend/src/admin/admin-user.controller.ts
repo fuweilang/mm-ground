@@ -15,6 +15,7 @@ import { CurrentUser } from '../auth/current-user';
 import { AdminService } from './admin.service';
 import { CreateAdminUserDto } from './dto/create-admin-user.dto';
 import { UpdateAdminUserDto } from './dto/update-admin-user.dto';
+import { ChangeAdminUserPasswordDto } from './dto/change-admin-user-password.dto';
 import { ListAdminUsersDto } from './dto/list-admin-users.dto';
 
 @Controller('admin/users')
@@ -35,6 +36,15 @@ export class AdminUserController {
   @Patch(':id')
   update(@CurrentUser() user: User, @Param('id') id: string, @Body() dto: UpdateAdminUserDto) {
     return this.admin.updateUser(user, id, dto);
+  }
+
+  @Patch(':id/password')
+  changePassword(
+    @CurrentUser() user: User,
+    @Param('id') id: string,
+    @Body() dto: ChangeAdminUserPasswordDto,
+  ) {
+    return this.admin.changePassword(user, id, dto.password);
   }
 
   @Delete(':id')

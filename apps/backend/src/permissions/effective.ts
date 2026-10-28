@@ -2,7 +2,8 @@ import { MemberRole, Prisma } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
 
 const ORG_PRESET_KEY: Record<MemberRole, string> = {
-  OWNER: 'org_owner',
+  // 企业侧只有两档：管理员与成员（OWNER 为历史值，按管理员处理）
+  OWNER: 'org_admin',
   ADMIN: 'org_admin',
   MEMBER: 'org_member',
 };

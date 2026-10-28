@@ -72,6 +72,21 @@
       </div>
     </div>
 
+    <el-alert
+      v-if="loadError"
+      class="page-alert"
+      type="error"
+      show-icon
+      :closable="false"
+      :title="loadError"
+    >
+      <template #default>
+        <el-button text type="primary" @click="load">
+          重试
+        </el-button>
+      </template>
+    </el-alert>
+
     <el-table
       v-loading="loading"
       :data="pagedRows"
@@ -113,20 +128,41 @@
           </el-tag>
         </template>
       </el-table-column>
-      <el-table-column label="操作" width="210" fixed="right" align="center">
+      <el-table-column label="操作" width="330" fixed="right" align="center">
         <template #default="{ row }">
           <div class="operation-buttons">
+            <el-button text type="primary" @click="openView(row)">
+              查看
+            </el-button>
             <el-button text type="primary" @click="openEdit(row)">
               编辑
             </el-button>
             <el-button
+              v-if="canChangePassword(row)"
+              text
+              type="primary"
+              @click="openChangePassword(row)"
+            >
+              修改密码
+            </el-button>
+            <el-button
+              v-if="row.status === 'active' && !isSuperAdminRow(row)"
               text
               type="warning"
-              :disabled="row.status !== 'active' || row.id === currentUserId"
-              :loading="deactivatingId === row.id"
+              :disabled="row.id === currentUserId"
+              :loading="statusChangingId === row.id"
               @click="onDeactivate(row)"
             >
               停用
+            </el-button>
+            <el-button
+              v-if="row.status !== 'active' && !isSuperAdminRow(row)"
+              text
+              type="success"
+              :loading="statusChangingId === row.id"
+              @click="onActivate(row)"
+            >
+              启用
             </el-button>
             <el-button
               v-if="canDeleteUser(row)"
@@ -165,10 +201,10 @@
     <el-dialog
       v-model="open"
       :title="editingId ? '编辑用户' : '新建用户'"
-      width="480px"
-      @close="resetForm"
+      class="user-dialog"
+      width="520px"
     >
-      <el-form ref="formRef" :model="form" :rules="rules" label-width="88px">
+      <el-form ref="formRef" :model="form" :rules="rules" label-width="96px">
         <el-form-item label="姓名" prop="name">
           <el-input v-model="form.name" maxlength="40" />
         </el-form-item>
@@ -179,36 +215,41 @@
             :disabled="Boolean(editingId)"
             @input="form.phone = form.phone.replace(/[^\d]/g, '').slice(0, 11)"
           />
+          <div v-if="editingId" class="form-hint">
+            手机号创建后不可修改
+          </div>
         </el-form-item>
-        <el-form-item label="密码" prop="password">
+        <el-form-item v-if="!editingId" label="密码" prop="password">
           <el-input
             v-model="form.password"
             type="password"
             show-password
-            :placeholder="editingId ? '留空则不修改' : '请输入密码'"
+            placeholder="请输入密码"
           />
         </el-form-item>
-        <el-form-item label="角色" prop="isPlatformAdmin">
-          <el-select v-model="form.isPlatformAdmin" style="width: 100%" @change="onPlatformAdminChange">
-            <el-option label="普通用户" :value="false" />
-            <el-option label="平台管理员" :value="true" />
+        <el-form-item v-if="!hideRoleSelect" label="角色" prop="platformRoleKey">
+          <el-select
+            v-model="form.platformRoleKey"
+            style="width: 100%"
+            placeholder="选择角色"
+            @change="onRoleKeyChange"
+          >
+            <el-option label="普通用户" value="" />
+            <el-option
+              v-for="role in roleOptions"
+              :key="role.key"
+              :label="role.name"
+              :value="role.key"
+            />
           </el-select>
+          <div class="field-hint">
+            角色及其权限变更，在该用户下次登录后生效。
+          </div>
         </el-form-item>
-        <el-form-item v-if="form.isPlatformAdmin" label="平台角色">
-          <el-select v-model="form.platformRoleKey" style="width: 100%">
-            <el-option label="平台管理员 (platform_admin)" value="platform_admin" />
-            <el-option label="超级管理员 (super_admin)" value="super_admin" />
-          </el-select>
-        </el-form-item>
-        <el-form-item v-if="!editingId && !form.isPlatformAdmin" label="所属企业" prop="tenantId">
-          <el-select v-model="form.tenantId" filterable placeholder="选择一家企业" style="width: 100%">
+        <el-form-item v-if="!hideRoleSelect && (editingId || !formIsPlatformSide)" label="所属企业" prop="tenantId">
+          <el-select v-model="form.tenantId" clearable filterable placeholder="选择一家企业" style="width: 100%">
+            <el-option v-if="editingId" label="不绑定企业" value="" />
             <el-option v-for="t in enterprises" :key="t.id" :label="t.name" :value="t.id" />
-          </el-select>
-        </el-form-item>
-        <el-form-item v-if="editingId" label="状态">
-          <el-select v-model="form.status" style="width: 100%">
-            <el-option label="激活" value="active" />
-            <el-option label="停用" value="inactive" />
           </el-select>
         </el-form-item>
       </el-form>
@@ -217,14 +258,80 @@
         <el-button type="primary" :loading="saving" @click="onSave">保存</el-button>
       </template>
     </el-dialog>
+
+    <el-dialog
+      v-model="viewOpen"
+      title="查看用户"
+      class="user-dialog"
+      width="520px"
+    >
+      <el-descriptions v-if="viewingRow" :column="1" border>
+        <el-descriptions-item label="姓名">
+          {{ viewingRow.name }}
+        </el-descriptions-item>
+        <el-descriptions-item label="手机号">
+          {{ viewingRow.phone }}
+        </el-descriptions-item>
+        <el-descriptions-item label="角色">
+          {{ roleLabel(viewingRow) }}
+        </el-descriptions-item>
+        <el-descriptions-item label="所属企业">
+          <span v-if="viewingRow.tenants.length === 0" class="muted">-</span>
+          <span v-else>{{ viewingRow.tenants.map((t) => t.name).join('、') }}</span>
+        </el-descriptions-item>
+        <el-descriptions-item label="账号状态">
+          {{ statusLabel(viewingRow.status) }}
+        </el-descriptions-item>
+        <el-descriptions-item label="创建时间">
+          {{ formatTime(viewingRow.createdAt) }}
+        </el-descriptions-item>
+      </el-descriptions>
+      <template #footer>
+        <el-button @click="viewOpen = false">关闭</el-button>
+      </template>
+    </el-dialog>
+
+    <el-dialog
+      v-model="passwordOpen"
+      title="修改密码"
+      class="user-dialog"
+      width="460px"
+    >
+      <el-form ref="passwordFormRef" :model="passwordForm" :rules="passwordRules" label-width="96px">
+        <el-form-item label="新密码" prop="password">
+          <el-input
+            v-model="passwordForm.password"
+            type="password"
+            show-password
+            placeholder="请输入新密码"
+            @input="passwordFormRef?.clearValidate('confirm')"
+          />
+        </el-form-item>
+        <el-form-item label="确认密码" prop="confirm">
+          <el-input
+            v-model="passwordForm.confirm"
+            type="password"
+            show-password
+            placeholder="请再次输入密码"
+          />
+        </el-form-item>
+        <div class="form-hint form-hint-block">
+          修改后该用户需使用新密码重新登录
+        </div>
+      </el-form>
+      <template #footer>
+        <el-button @click="passwordOpen = false">取消</el-button>
+        <el-button type="primary" :loading="passwordSaving" @click="onChangePassword">确定</el-button>
+      </template>
+    </el-dialog>
   </section>
 </template>
 
 <script setup lang="ts">
-import { computed, h, onBeforeUnmount, onMounted, reactive, ref } from 'vue';
+import { computed, h, nextTick, onBeforeUnmount, onMounted, reactive, ref } from 'vue';
 import { ElMessage, ElMessageBox, type FormInstance, type FormRules } from 'element-plus';
 import { Search } from 'lucide-vue-next';
-import { adminEnterpriseApi, adminUserApi, type AdminEnterpriseRow, type AdminUserRow } from '../../api/admin';
+import { adminEnterpriseApi, adminRoleApi, adminUserApi, type AdminEnterpriseRow, type AdminRoleRow, type AdminUserRow } from '../../api/admin';
 import { useAuthStore } from '../../stores/auth';
 
 const TENANT_COLORS = ['#7c3aed', '#0891b2', '#c2410c', '#15803d', '#be123c', '#4f46e5', '#a16207', '#0f766e'];
@@ -232,11 +339,24 @@ const TENANT_COLORS = ['#7c3aed', '#0891b2', '#c2410c', '#15803d', '#be123c', '#
 const auth = useAuthStore();
 const rows = ref<AdminUserRow[]>([]);
 const enterprises = ref<AdminEnterpriseRow[]>([]);
+const roleOptions = ref<AdminRoleRow[]>([]);
 const loading = ref(false);
+const loadError = ref('');
 const open = ref(false);
 const saving = ref(false);
 const editingId = ref('');
-const deactivatingId = ref('');
+const initialTenantId = ref('');
+const passwordOpen = ref(false);
+const viewOpen = ref(false);
+const viewingRow = ref<AdminUserRow | null>(null);
+const passwordSaving = ref(false);
+const passwordTargetId = ref('');
+const passwordFormRef = ref<FormInstance>();
+const passwordForm = reactive({
+  password: '',
+  confirm: '',
+});
+const statusChangingId = ref('');
 const deletingId = ref('');
 const nameDraft = ref('');
 const phoneDraft = ref('');
@@ -244,7 +364,7 @@ const roleFilter = ref<'' | 'admin' | 'user'>('');
 const statusFilter = ref('');
 const enterpriseFilter = ref('');
 const currentPage = ref(1);
-const pageSize = ref(10);
+const pageSize = ref(20);
 const formRef = ref<FormInstance>();
 let searchTimer = 0;
 let requestSequence = 0;
@@ -253,17 +373,45 @@ const form = reactive({
   name: '',
   phone: '',
   password: '',
-  isPlatformAdmin: false,
-  platformRoleKey: 'platform_admin' as 'super_admin' | 'platform_admin',
+  /** Empty string = 普通用户 (no UserPlatformRole). */
+  platformRoleKey: '' as string,
   tenantId: '',
-  status: 'active',
 });
 
-function onPlatformAdminChange(v: boolean) {
-  if (v && !form.platformRoleKey) form.platformRoleKey = 'platform_admin';
+/** Editing an existing super_admin: hide role select; role fixed. */
+const hideRoleSelect = computed(
+  () => Boolean(editingId.value) && form.platformRoleKey === 'super_admin',
+);
+
+const selectedRole = computed(() =>
+  roleOptions.value.find((r) => r.key === form.platformRoleKey) ?? null,
+);
+
+/** PLATFORM-scope role → platform-side account (no tenant required on create). */
+const formIsPlatformSide = computed(() => selectedRole.value?.scope === 'PLATFORM');
+
+function onRoleKeyChange() {
+  // tenant only required for non-PLATFORM; clear stale tenant when switching to PLATFORM
+  if (formIsPlatformSide.value) form.tenantId = '';
 }
 
 const currentUserId = computed(() => auth.session?.user.id || '');
+
+const actorIsSuperAdmin = computed(
+  () =>
+    auth.session?.platformRoleKey === 'super_admin'
+    || auth.session?.user?.platformRoleKey === 'super_admin',
+);
+
+function canChangePassword(row: AdminUserRow) {
+  if (row.platformRoleKey === 'super_admin' && !actorIsSuperAdmin.value) return false;
+  return true;
+}
+
+/** 超管行不提供停用/启用/删除入口。 */
+function isSuperAdminRow(row: AdminUserRow) {
+  return row.platformRoleKey === 'super_admin';
+}
 
 const rules: FormRules = {
   name: [{ required: true, message: '请输入姓名', trigger: 'blur' }],
@@ -283,8 +431,8 @@ const rules: FormRules = {
   tenantId: [
     {
       validator: (_rule, value: string, callback) => {
-        if (!editingId.value && !form.isPlatformAdmin && !value) {
-          callback(new Error('普通用户必须绑定一家企业'));
+        if (!editingId.value && !formIsPlatformSide.value && !value) {
+          callback(new Error('非平台角色用户必须绑定一家企业'));
           return;
         }
         callback();
@@ -298,16 +446,31 @@ const hasActiveFilters = computed(() =>
   Boolean(nameDraft.value || phoneDraft.value || roleFilter.value || statusFilter.value || enterpriseFilter.value),
 );
 
+const passwordRules: FormRules = {
+  password: [{ required: true, message: '请输入新密码', trigger: 'blur' }],
+  confirm: [
+    { required: true, message: '请再次输入新密码', trigger: 'blur' },
+    {
+      validator: (_rule, value: string, callback) => {
+        if (value !== passwordForm.password) {
+          callback(new Error('两次输入的密码不一致'));
+          return;
+        }
+        callback();
+      },
+      trigger: 'blur',
+    },
+  ],
+};
+
 const emptyText = computed(() => (hasActiveFilters.value ? '没有符合条件的用户' : '还没有用户'));
 
 const filteredRows = computed(() => {
   const name = nameDraft.value.trim();
   const phone = phoneDraft.value.trim();
-  const enterpriseId = enterpriseFilter.value;
   return rows.value.filter((row) => {
     if (name && !row.name.includes(name)) return false;
     if (phone && !row.phone.includes(phone)) return false;
-    if (enterpriseId && !row.tenants.some((tenant) => tenant.id === enterpriseId)) return false;
     return true;
   });
 });
@@ -319,14 +482,24 @@ const pagedRows = computed(() => {
 
 function roleLabel(row: AdminUserRow | boolean) {
   if (typeof row === 'boolean') return row ? '平台管理员' : '普通用户';
-  if (!row.isPlatformAdmin) return '普通用户';
+  if (row.platformRoleName) return row.platformRoleName;
+  if (!row.platformRoleKey) return '普通用户';
+  const fromList = roleOptions.value.find((r) => r.key === row.platformRoleKey);
+  if (fromList) return fromList.name;
   if (row.platformRoleKey === 'super_admin') return '超级管理员';
   if (row.platformRoleKey === 'platform_admin') return '平台管理员';
-  return '平台管理员';
+  return row.platformRoleKey;
 }
 
 function statusLabel(status: string) {
   return status === 'active' ? '激活' : '停用';
+}
+
+function formatTime(value: string) {
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return '-';
+  const pad = (n: number) => String(n).padStart(2, '0');
+  return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())} ${pad(date.getHours())}:${pad(date.getMinutes())}`;
 }
 
 function canDeleteUser(row: AdminUserRow) {
@@ -374,6 +547,7 @@ function onSearchNow() {
 
 function onEnterpriseChange() {
   resetPage();
+  void load();
 }
 
 function onReset() {
@@ -398,31 +572,42 @@ function onPageSizeChange(size: number) {
 
 function resetForm() {
   editingId.value = '';
+  initialTenantId.value = '';
   form.name = '';
   form.phone = '';
   form.password = '';
-  form.isPlatformAdmin = false;
-  form.platformRoleKey = 'platform_admin';
+  form.platformRoleKey = '';
   form.tenantId = '';
-  form.status = 'active';
   formRef.value?.clearValidate();
+}
+
+function clearFormError() {
+  // 等表单渲染完再清，避免复用弹窗时残留上一个用户的报错
+  void nextTick(() => formRef.value?.clearValidate());
 }
 
 function openCreate() {
   resetForm();
   open.value = true;
+  clearFormError();
+}
+
+function openView(row: AdminUserRow) {
+  viewingRow.value = row;
+  viewOpen.value = true;
 }
 
 function openEdit(row: AdminUserRow) {
+  resetForm();
   editingId.value = row.id;
   form.name = row.name;
   form.phone = row.phone;
   form.password = '';
-  form.isPlatformAdmin = row.isPlatformAdmin;
-  form.platformRoleKey = row.platformRoleKey === 'super_admin' ? 'super_admin' : 'platform_admin';
+  form.platformRoleKey = row.platformRoleKey ?? '';
   form.tenantId = row.tenants[0]?.id ?? '';
-  form.status = row.status;
+  initialTenantId.value = form.tenantId;
   open.value = true;
+  clearFormError();
 }
 
 async function load() {
@@ -433,12 +618,15 @@ async function load() {
       keyword: nameDraft.value.trim() || phoneDraft.value.trim(),
       role: roleFilter.value,
       status: statusFilter.value,
+      enterpriseId: enterpriseFilter.value,
     });
     if (sequence !== requestSequence) return;
     rows.value = result;
+    loadError.value = '';
   } catch (e) {
     if (sequence !== requestSequence) return;
-    ElMessage.error(e instanceof Error ? e.message : '加载失败');
+    loadError.value = e instanceof Error ? e.message : '加载失败';
+    ElMessage.error(loadError.value);
   } finally {
     if (sequence === requestSequence) loading.value = false;
   }
@@ -452,28 +640,44 @@ async function loadEnterprises() {
   }
 }
 
+async function loadRoles() {
+  try {
+    // 只允许分配平台角色；企业预设由成员身份自动套用
+    roleOptions.value = (await adminRoleApi.list()).filter((role) => role.scope === 'PLATFORM');
+  } catch {
+    roleOptions.value = [];
+  }
+}
+
 async function onSave() {
   const valid = await formRef.value?.validate().catch(() => false);
   if (!valid) return;
   saving.value = true;
   try {
+    const roleKey = form.platformRoleKey || null;
+    const isPlatformAdmin = formIsPlatformSide.value;
     if (editingId.value) {
-      await adminUserApi.update(editingId.value, {
+      const payload: Parameters<typeof adminUserApi.update>[1] = {
         name: form.name.trim(),
-        isPlatformAdmin: form.isPlatformAdmin,
-        platformRoleKey: form.isPlatformAdmin ? form.platformRoleKey : null,
-        status: form.status,
-        ...(form.password ? { password: form.password } : {}),
-      });
+      };
+      // super_admin edit: do not send platformRoleKey / isPlatformAdmin
+      if (!hideRoleSelect.value) {
+        payload.isPlatformAdmin = isPlatformAdmin;
+        payload.platformRoleKey = roleKey;
+        if (form.tenantId !== initialTenantId.value) {
+          payload.tenantId = form.tenantId || null;
+        }
+      }
+      await adminUserApi.update(editingId.value, payload);
       ElMessage.success('已保存');
     } else {
       await adminUserApi.create({
         name: form.name.trim(),
         phone: form.phone,
         password: form.password,
-        isPlatformAdmin: form.isPlatformAdmin,
-        ...(form.isPlatformAdmin ? { platformRoleKey: form.platformRoleKey } : {}),
-        ...(!form.isPlatformAdmin && form.tenantId ? { tenantId: form.tenantId } : {}),
+        isPlatformAdmin,
+        ...(roleKey ? { platformRoleKey: roleKey } : {}),
+        ...(!isPlatformAdmin && form.tenantId ? { tenantId: form.tenantId } : {}),
       });
       ElMessage.success('已创建');
     }
@@ -483,6 +687,59 @@ async function onSave() {
     ElMessage.error(e instanceof Error ? e.message : '保存失败');
   } finally {
     saving.value = false;
+  }
+}
+
+function resetPasswordForm() {
+  passwordTargetId.value = '';
+  passwordForm.password = '';
+  passwordForm.confirm = '';
+  passwordFormRef.value?.clearValidate();
+}
+
+function openChangePassword(row: AdminUserRow) {
+  if (!canChangePassword(row)) return;
+  passwordTargetId.value = row.id;
+  passwordForm.password = '';
+  passwordForm.confirm = '';
+  passwordOpen.value = true;
+  void nextTick(() => passwordFormRef.value?.clearValidate());
+}
+
+async function onChangePassword() {
+  if (!passwordTargetId.value) return;
+  const valid = await passwordFormRef.value?.validate().catch(() => false);
+  if (!valid) return;
+  passwordSaving.value = true;
+  try {
+    await adminUserApi.changePassword(passwordTargetId.value, passwordForm.password);
+    ElMessage.success('密码已更新');
+    passwordOpen.value = false;
+  } catch (e) {
+    ElMessage.error(e instanceof Error ? e.message : '修改密码失败');
+  } finally {
+    passwordSaving.value = false;
+  }
+}
+
+async function onActivate(row: AdminUserRow) {
+  try {
+    await ElMessageBox.confirm(`启用后「${row.name}」可以重新登录。确定启用？`, '启用用户', {
+      type: 'info',
+      confirmButtonText: '启用',
+    });
+  } catch {
+    return;
+  }
+  statusChangingId.value = row.id;
+  try {
+    await adminUserApi.update(row.id, { status: 'active' });
+    ElMessage.success('已启用');
+    await load();
+  } catch (e) {
+    ElMessage.error(e instanceof Error ? e.message : '启用失败');
+  } finally {
+    statusChangingId.value = '';
   }
 }
 
@@ -496,7 +753,7 @@ async function onDeactivate(row: AdminUserRow) {
   } catch {
     return;
   }
-  deactivatingId.value = row.id;
+  statusChangingId.value = row.id;
   try {
     await adminUserApi.deactivate(row.id);
     ElMessage.success('已停用');
@@ -504,7 +761,7 @@ async function onDeactivate(row: AdminUserRow) {
   } catch (e) {
     ElMessage.error(e instanceof Error ? e.message : '停用失败');
   } finally {
-    deactivatingId.value = '';
+    statusChangingId.value = '';
   }
 }
 
@@ -541,6 +798,7 @@ async function onDelete(row: AdminUserRow) {
 
 onMounted(() => {
   void loadEnterprises();
+  void loadRoles();
   void load();
 });
 
@@ -555,6 +813,10 @@ onBeforeUnmount(() => {
   background: #fff;
   min-height: calc(100vh - 120px);
   padding: 18px;
+}
+
+.page-alert {
+  margin-bottom: 12px;
 }
 
 .user-toolbar {
@@ -616,6 +878,79 @@ onBeforeUnmount(() => {
   width: 100%;
 }
 
+/* 弹窗统一风格：方角、细分隔线、13px 正文 */
+.user-dialog {
+  max-width: calc(100vw - 32px);
+}
+
+.user-dialog :deep(.el-dialog__header) {
+  border-bottom: 1px solid #dfe5ef;
+  margin-right: 0;
+  padding: 18px 24px;
+}
+
+.user-dialog :deep(.el-dialog__title) {
+  color: #333946;
+  font-size: 16px;
+  font-weight: 600;
+}
+
+.user-dialog :deep(.el-dialog__headerbtn) {
+  height: 52px;
+  width: 52px;
+}
+
+.user-dialog :deep(.el-dialog__body) {
+  color: #333946;
+  font-size: 13px;
+  padding: 22px 24px 6px;
+}
+
+.user-dialog :deep(.el-dialog__footer) {
+  border-top: 1px solid #dfe5ef;
+  padding: 14px 24px;
+}
+
+.user-dialog :deep(.el-dialog__footer .el-button + .el-button) {
+  margin-left: 8px;
+}
+
+.user-dialog :deep(.el-form-item) {
+  margin-bottom: 18px;
+}
+
+.user-dialog :deep(.el-form-item__label) {
+  color: #667085;
+  font-weight: 400;
+}
+
+.user-dialog :deep(.el-descriptions__label) {
+  background: #f8fafc;
+  color: #667085;
+  font-weight: 400;
+  text-align: right;
+  width: 96px;
+}
+
+.user-dialog :deep(.el-descriptions__content) {
+  color: #333946;
+}
+
+.user-dialog :deep(.el-descriptions__cell) {
+  padding: 10px 14px;
+}
+
+.form-hint {
+  color: #98a2b3;
+  font-size: 12px;
+  line-height: 1.6;
+  margin-top: 4px;
+}
+
+.form-hint-block {
+  margin: 0 0 4px 96px;
+}
+
 .muted {
   color: #98a2b3;
 }
@@ -629,6 +964,13 @@ onBeforeUnmount(() => {
 
 .subject-label + .subject-label {
   margin-left: 10px;
+}
+
+.field-hint {
+  color: #98a2b3;
+  font-size: 12px;
+  line-height: 1.5;
+  margin-top: 4px;
 }
 
 .visual-dot {
@@ -677,6 +1019,10 @@ onBeforeUnmount(() => {
 }
 
 @media (max-width: 768px) {
+  .user-dialog {
+    width: calc(100vw - 32px) !important;
+  }
+
   .user-toolbar {
     align-items: stretch;
     flex-direction: column;

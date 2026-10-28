@@ -61,6 +61,21 @@
         </template>
       </el-table-column>
       <el-table-column prop="slug" label="品牌" min-width="140" show-overflow-tooltip />
+      <el-table-column label="管理员" min-width="180">
+        <template #default="{ row }">
+          <div v-if="row.admins.length" class="admin-list">
+            <div
+              v-for="admin in row.admins"
+              :key="admin.id"
+              class="admin-item"
+            >
+              <span class="admin-name">{{ admin.name }}</span>
+              <span class="admin-phone">{{ admin.phone }}</span>
+            </div>
+          </div>
+          <span v-else class="admin-empty">未设置</span>
+        </template>
+      </el-table-column>
       <el-table-column label="账号状态" width="90">
         <template #default="{ row }">
           <el-tag size="small" :type="row.status === 'active' ? 'success' : 'info'">
@@ -361,10 +376,29 @@ async function confirmWorkbench() {
 
 async function onDelete(row: AdminEnterpriseRow) {
   try {
-    await ElMessageBox.confirm(`确定删除企业「${row.name}」？该操作不可恢复。`, '删除企业', {
+    const impact = await adminEnterpriseApi.deletionImpact(row.id);
+    if (!impact.canDelete) {
+      ElMessage.warning(`不能删除：${impact.blockedReasons.join('、')}`);
+      return;
+    }
+    const lines = [`确定删除企业「${row.name}」？删除后不可恢复。`];
+    if (impact.deletedUsers.length > 0) {
+      const users = impact.deletedUsers.map((user) => `${user.name}（${user.phone}）`).join('、');
+      lines.push(`将同时删除 ${impact.deletedUsers.length} 个只属于该企业的用户：${users}`);
+    } else {
+      lines.push('没有只属于该企业的用户需要删除。');
+    }
+    if (impact.unboundMemberCount > 0) {
+      lines.push(`另有 ${impact.unboundMemberCount} 个成员只解除企业关系，账号保留。`);
+    }
+    if (impact.usageEventCount > 0) {
+      lines.push(`该企业的 ${impact.usageEventCount} 条用量记录将一并清除。`);
+    }
+    await ElMessageBox.confirm(lines.join('\n'), '删除企业', {
       type: 'warning',
       confirmButtonText: '删除',
       confirmButtonClass: 'el-button--danger',
+      customClass: 'enterprise-delete-confirm',
     });
   } catch {
     return;
@@ -455,11 +489,42 @@ onBeforeUnmount(() => {
   gap: 7px;
 }
 
+.admin-list {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.admin-item {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  line-height: 1.35;
+}
+
+.admin-name {
+  color: #333946;
+}
+
+.admin-phone {
+  color: #667085;
+  font-size: 12px;
+}
+
+.admin-empty {
+  color: #98a2b3;
+}
+
 .visual-dot {
   border-radius: 50%;
   flex: 0 0 7px;
   height: 7px;
   width: 7px;
+}
+
+:global(.enterprise-delete-confirm .el-message-box__message) {
+  white-space: pre-line;
+  line-height: 1.7;
 }
 
 .operation-buttons {

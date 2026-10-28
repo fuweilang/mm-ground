@@ -82,10 +82,12 @@ async function ensurePlatformRole(userId: string, roleKey: BuiltinRoleKey) {
 async function main() {
   await ensureBuiltinRoles();
 
-  const platform = await prisma.tenant.upsert({
-    where: { slug: 'platform' },
-    update: {},
-    create: { name: '猛犸总部', slug: 'platform', type: TenantType.PLATFORM },
+  // 复用已存在的总部租户，避免重复创建「猛犸总部」
+  const platform = await prisma.tenant.findFirst({
+    where: { type: TenantType.PLATFORM },
+    orderBy: { createdAt: 'asc' },
+  }) ?? await prisma.tenant.create({
+    data: { name: '猛犸总部', slug: 'platform', type: TenantType.PLATFORM },
   });
   const agency = await prisma.tenant.upsert({
     where: { slug: 'demo-agency' },
@@ -109,7 +111,7 @@ async function main() {
     create: { parentId: agency.id, childId: enterprise.id },
   });
 
-  const admin = await upsertUser('13800000001', '平台超管', true);
+  const admin = await upsertUser('13800000001', '平台管理员', true);
   await ensurePlatformRole(admin.id, 'super_admin');
   const agencyUser = await upsertUser('13800000002', '代理商管理员');
   const owner = await upsertUser('13800000004', '企业管理员');
@@ -118,17 +120,17 @@ async function main() {
   await prisma.orgMember.upsert({
     where: { userId_tenantId: { userId: admin.id, tenantId: platform.id } },
     update: {},
-    create: { userId: admin.id, tenantId: platform.id, role: MemberRole.OWNER },
+    create: { userId: admin.id, tenantId: platform.id, role: MemberRole.ADMIN },
   });
   await prisma.orgMember.upsert({
     where: { userId_tenantId: { userId: agencyUser.id, tenantId: agency.id } },
     update: {},
-    create: { userId: agencyUser.id, tenantId: agency.id, role: MemberRole.OWNER },
+    create: { userId: agencyUser.id, tenantId: agency.id, role: MemberRole.ADMIN },
   });
   await prisma.orgMember.upsert({
     where: { userId_tenantId: { userId: owner.id, tenantId: enterprise.id } },
-    update: { role: MemberRole.OWNER },
-    create: { userId: owner.id, tenantId: enterprise.id, role: MemberRole.OWNER },
+    update: { role: MemberRole.ADMIN },
+    create: { userId: owner.id, tenantId: enterprise.id, role: MemberRole.ADMIN },
   });
   await prisma.orgMember.upsert({
     where: { userId_tenantId: { userId: demoUser.id, tenantId: enterprise.id } },
@@ -159,7 +161,7 @@ async function main() {
   await ensureSampleDoc(enterprise.id, folders['法规']);
 
   console.log('seed ok');
-  console.log('  13800000001 / 12345678  (平台超管)');
+  console.log('  13800000001 / 12345678  (平台管理员)');
   console.log('  13800000002 / 12345678  (代理商)');
   console.log('  13800000004 / 12345678  (企业管理员)');
   console.log('  13800000003 / 12345678  (企业员工)');

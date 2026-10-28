@@ -10,8 +10,21 @@ export function getCachedSession(): SessionMe | null {
   const raw = localStorage.getItem(CURRENT_USER_KEY);
   if (!raw) return null;
   try {
-    return JSON.parse(raw) as SessionMe;
+    const parsed = JSON.parse(raw) as Partial<SessionMe> | null;
+    // 旧版本缓存缺 RBAC 字段（effectivePermissions / platformRoleKey）会让权限判定恒为 false，
+    // 这里直接丢缓存，让路由守卫重新拉 /auth/me。
+    if (
+      !parsed
+      || !parsed.user
+      || !Array.isArray(parsed.effectivePermissions)
+      || !('platformRoleKey' in parsed)
+    ) {
+      clearSessionCache();
+      return null;
+    }
+    return parsed as SessionMe;
   } catch {
+    clearSessionCache();
     return null;
   }
 }

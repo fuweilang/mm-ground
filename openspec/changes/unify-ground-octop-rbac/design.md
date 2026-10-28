@@ -143,7 +143,8 @@ return sorted(unique(perms))
 | GET | `/api/admin/roles` | `roles.read` | 列表；支持 keyword |
 | POST | `/api/admin/roles` | `roles.write` | 一期默认只允许编辑内置平台角色的权限，或禁止新建（若一期不开放自定义平台角色，则 POST 可 404/403；**最低交付是 PATCH 内置**） |
 | PATCH | `/api/admin/roles/:id` | `roles.write` | 改 name/description/permissions；`super_admin` 的 permissions 可锁定为全量 |
-| GET/PATCH | `/api/admin/users/:id` | `users` | 增加 `platformRoleKey`；创建/更新可赋平台角色 |
+| GET/PATCH | `/api/admin/users/:id` | `users` | 增加 `platformRoleKey`；创建/更新可赋平台角色；更新 **不再** 接受 password |
+| PATCH | `/api/admin/users/:id/password` | `users` | 独立改密；非超管不可改 `super_admin` 密码 |
 | GET | `/auth/me` | 登录用户 | 含 `effectivePermissions` |
 
 错误：403 无 key；400 未知 permKey；409 删除仍被引用；404 角色不存在。

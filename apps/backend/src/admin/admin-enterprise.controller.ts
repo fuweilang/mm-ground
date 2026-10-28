@@ -26,6 +26,11 @@ export class AdminEnterpriseController {
     return this.admin.updateEnterprise(user, id, dto);
   }
 
+  @Get(':id/deletion-impact')
+  deletionImpact(@CurrentUser() user: User, @Param('id') id: string) {
+    return this.admin.getEnterpriseDeletionImpact(user, id);
+  }
+
   @Delete(':id')
   remove(@CurrentUser() user: User, @Param('id') id: string) {
     return this.admin.deleteEnterprise(user, id);
