@@ -34,3 +34,46 @@ export function detectClientOs(): 'mac' | 'win' | 'other' {
 export function clientDownloadUrl(platform: ClientPlatform) {
   return `${CLIENT_FILES[platform]}?v=${Date.now()}`;
 }
+
+export type ClientDownloadInfo = {
+  version: string;
+  /** YYYY-MM-DD，取 `mammoth-latest.json` 的 `updated_at` */
+  date: string;
+  /** 安装包大小（MB），拿不到时为 null */
+  sizeMb: number | null;
+};
+
+const LATEST_MANIFEST = '/downloads/mammoth-latest.json';
+
+/** 弹窗里的统一版本信息行；任何一步失败都返回 null（整行隐藏）。 */
+export async function fetchClientDownloadInfo(): Promise<ClientDownloadInfo | null> {
+  try {
+    const res = await fetch(LATEST_MANIFEST, { cache: 'no-store' });
+    if (!res.ok) return null;
+    const data = (await res.json()) as {
+      updated_at?: string;
+      platforms?: Record<string, { shell?: { version?: string } } | undefined>;
+    };
+    const version = data.platforms?.['darwin-arm64']?.shell?.version;
+    if (!version) return null;
+    return {
+      version,
+      date: (data.updated_at || '').slice(0, 10),
+      sizeMb: await probeSizeMb(CLIENT_FILES['mac-arm64']),
+    };
+  } catch {
+    return null;
+  }
+}
+
+async function probeSizeMb(path: string): Promise<number | null> {
+  try {
+    const res = await fetch(path, { method: 'HEAD', cache: 'no-store' });
+    if (!res.ok) return null;
+    const bytes = Number(res.headers.get('content-length') || 0);
+    if (!Number.isFinite(bytes) || bytes <= 0) return null;
+    return Math.round(bytes / (1024 * 1024));
+  } catch {
+    return null;
+  }
+}
