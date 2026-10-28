@@ -71,9 +71,9 @@ async function ensureBuiltinRoles() {
 async function ensurePlatformRole(userId: string, roleKey: BuiltinRoleKey) {
   const role = await prisma.role.findUnique({ where: { key: roleKey } });
   if (!role) throw new Error(`missing role ${roleKey}`);
-  await prisma.userPlatformRole.upsert({
-    where: { userId },
-    update: { roleId: role.id },
+  await prisma.userRole.upsert({
+    where: { userId_roleId: { userId, roleId: role.id } },
+    update: {},
     create: { userId, roleId: role.id },
   });
   await prisma.user.update({ where: { id: userId }, data: { isPlatformAdmin: true } });

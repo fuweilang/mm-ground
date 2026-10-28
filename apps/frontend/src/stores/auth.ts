@@ -33,6 +33,7 @@ export const useAuthStore = defineStore('auth', () => {
     phone: string;
     password: string;
     enterpriseName: string;
+    slug: string;
   }) {
     apply(await authApi.register(body));
   }

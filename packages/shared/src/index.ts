@@ -79,19 +79,13 @@ export function hasPermission(
   return false;
 }
 
-/** Prefer portal.console.access; fall back to role/boolean for old clients. */
+/**
+ * 企业控制台访问权：只要归属某家企业就能进（平台管理员选企业后也能代运营）。
+ * 控制台内部的模块权限后续再拆分。
+ */
 export function canAccessConsole(session: SessionMe | null | undefined): boolean {
   if (!session) return false;
-  const perms = session.effectivePermissions;
-  if (Array.isArray(perms)) {
-    if (perms.includes('portal.console.access')) return true;
-    // Platform admin 代运营进企业：种子平台包通常无 console.access，仍放行
-    if (session.user.isPlatformAdmin && session.currentTenant) return true;
-    // 有权限数组且非上述 → MEMBER 等无 console
-    if (!session.user.isPlatformAdmin) return false;
-  }
-  if (session.user.isPlatformAdmin) return true;
-  return session.currentRole === MemberRole.OWNER || session.currentRole === MemberRole.ADMIN;
+  return Boolean(session.currentTenant);
 }
 
 /** Prefer portal.admin.access; fall back to isPlatformAdmin. */

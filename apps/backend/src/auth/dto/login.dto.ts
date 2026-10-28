@@ -24,6 +24,12 @@ export class RegisterDto {
   @IsString()
   @MinLength(1)
   enterpriseName!: string;
+
+  /** 品牌标识：中英文/数字/短横线/下划线，1～40 位，全局唯一。 */
+  @Matches(/^[\u4e00-\u9fa5a-zA-Z0-9\-_]{1,40}$/, {
+    message: '品牌只能包含中英文、数字、短横线或下划线，1～40 位',
+  })
+  slug!: string;
 }
 
 export class SwitchTenantDto {

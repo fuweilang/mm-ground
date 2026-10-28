@@ -38,6 +38,7 @@
     </aside>
 
     <section class="main-area">
+      <WorkbenchBanner v-if="!isPlatformArea" />
       <header class="navbar">
         <div class="navbar-leading">
           <el-breadcrumb separator="/">
@@ -94,6 +95,7 @@ import {
 import { useAuthStore } from '../stores/auth';
 import { clearOctopSession } from '../utils/session';
 import { useResponsiveSidebar } from './useResponsiveSidebar';
+import WorkbenchBanner from './WorkbenchBanner.vue';
 import ClientDownloadLink from '../components/ClientDownloadLink.vue';
 import TenantSwitcher from '../components/TenantSwitcher.vue';
 

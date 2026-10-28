@@ -85,7 +85,14 @@ router.beforeEach(async (to) => {
 
   if (to.path.startsWith('/console')) {
     if (!canAccessConsole(session)) {
-      ElMessage.warning('无权访问企业控制台');
+      ElMessage.warning('当前账号在企业内没有「企业控制台」权限，请联系企业管理员分配');
+      window.location.href = AGENT_HOME;
+      return false;
+    }
+    // 企业被停用：平台管理员退回总后台，企业用户退出到智能体首页。
+    if (session?.currentTenant && session.currentTenant.status !== 'active') {
+      ElMessage.warning('该企业已被停用');
+      if (session.user.isPlatformAdmin) return '/admin';
       window.location.href = AGENT_HOME;
       return false;
     }

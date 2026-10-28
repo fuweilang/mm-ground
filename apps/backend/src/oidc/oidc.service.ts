@@ -7,6 +7,7 @@ import type { JWK, JWTPayload } from 'jose';
 import { User } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
 import { computeEffectivePermissions } from '../permissions/effective';
+import { tenantActive } from '../auth/tenant-status';
 import { loadOidcKeys, OIDC_KID } from './oidc.keys';
 import { saveCode, takeCode } from './oidc.store';
 
@@ -164,6 +165,10 @@ export class OidcService implements OnModuleInit {
     const now = Math.floor(Date.now() / 1000);
     const eff = await computeEffectivePermissions(this.prisma, user.id, row.tenantId ?? null);
     const isPlatformAdmin = eff.isPlatformAdmin || user.isPlatformAdmin;
+    // 停用企业的成员不给换 token：Octop 侧拿不到新会话。
+    if (!isPlatformAdmin && !(await tenantActive(this.prisma, row.tenantId))) {
+      throw new UnauthorizedException('invalid_grant');
+    }
     const idToken = await new SignJWT({
       nonce: row.nonce,
       name: user.name,
@@ -204,6 +209,9 @@ export class OidcService implements OnModuleInit {
     if (!user || user.status !== 'active') throw new UnauthorizedException('invalid_token');
     const eff = await computeEffectivePermissions(this.prisma, user.id, tenantId);
     const isPlatformAdmin = eff.isPlatformAdmin || user.isPlatformAdmin;
+    if (!isPlatformAdmin && !(await tenantActive(this.prisma, tenantId))) {
+      throw new UnauthorizedException('invalid_token');
+    }
     return {
       sub: user.id,
       name: user.name,

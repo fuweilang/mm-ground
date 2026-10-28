@@ -47,12 +47,20 @@
           {{ row.user.phone }}
         </template>
       </el-table-column>
-      <el-table-column label="角色" width="140">
+      <el-table-column label="角色" min-width="160">
         <template #default="{ row }">
-          <el-tag class="identity-tag" size="small" :style="roleTagStyle(row.role)">
-            <span class="visual-dot" :style="{ backgroundColor: roleColor(row.role) }" />
-            {{ roleLabel(row.role) }}
-          </el-tag>
+          <div class="role-tags">
+            <el-tag
+              v-for="role in memberRoles(row)"
+              :key="role.label"
+              class="identity-tag"
+              size="small"
+              :style="roleTagStyleByName(role.color)"
+            >
+              <span class="visual-dot" :style="{ backgroundColor: role.color }" />
+              {{ role.label }}
+            </el-tag>
+          </div>
         </template>
       </el-table-column>
       <template #empty>
@@ -168,6 +176,34 @@ const emptyText = computed(() => {
   if (keyword.value || roleFilter.value) return '没有符合条件的成员';
   return '还没有成员';
 });
+
+const MEMBER_ROLE_COLORS: Record<string, string> = {
+  super_admin: '#7c3aed',
+  platform_admin: '#1d4ed8',
+  org_admin: '#0891b2',
+  org_member: '#15803d',
+};
+
+/** 多角色：每个角色一个标签；接口没有角色时退回历史枚举。 */
+function memberRoles(row: { role: MemberRole; user?: { roles?: Array<{ role: { key: string; name: string } }> } }) {
+  const roles = row.user?.roles ?? [];
+  if (roles.length > 0) {
+    return roles.map((item) => ({
+      label: item.role.name,
+      color: MEMBER_ROLE_COLORS[item.role.key] ?? '#2563eb',
+    }));
+  }
+  return [{ label: roleLabel(row.role), color: roleColor(row.role) }];
+}
+
+function roleTagStyleByName(color: string) {
+  return {
+    '--tag-color': color,
+    color,
+    backgroundColor: `color-mix(in srgb, ${color} 12%, transparent)`,
+    borderColor: `color-mix(in srgb, ${color} 32%, transparent)`,
+  };
+}
 
 function roleLabel(role: MemberRole) {
   return MemberRoleLabel[role];
@@ -324,6 +360,13 @@ onBeforeUnmount(() => {
 .members-table {
   margin-top: 20px;
   width: 100%;
+}
+
+.role-tags {
+  align-items: center;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
 }
 
 .identity-tag {

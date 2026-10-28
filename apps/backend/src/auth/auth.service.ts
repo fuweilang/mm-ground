@@ -27,7 +27,7 @@ export class AuthService {
   private usedBrowserSsoJti = new Set<string>();
 
   async register(
-    input: { name: string; phone: string; password: string; enterpriseName: string },
+    input: { name: string; phone: string; password: string; enterpriseName: string; slug: string },
     res: Response,
     ip?: string,
   ) {
@@ -42,7 +42,7 @@ export class AuthService {
 
   async provisionEnterpriseUser(
     actor: User,
-    input: { name: string; phone: string; password: string; enterpriseName: string },
+    input: { name: string; phone: string; password: string; enterpriseName: string; slug: string },
   ) {
     if (!actor.isPlatformAdmin) throw new ForbiddenException('仅平台管理员可开户');
     const phone = input.phone.trim();
@@ -68,19 +68,16 @@ export class AuthService {
     phone: string;
     password: string;
     enterpriseName: string;
+    slug: string;
   }) {
     const phone = input.phone.trim();
     const existing = await this.prisma.user.findUnique({ where: { phone } });
     if (existing) throw new ConflictException('手机号已注册');
 
     const passwordHash = await bcrypt.hash(input.password, 10);
-    const slugBase =
-      input.enterpriseName
-        .trim()
-        .toLowerCase()
-        .replace(/[^a-z0-9]+/g, '-')
-        .replace(/^-|-$/g, '') || 'org';
-    const slug = `${slugBase}-${Date.now().toString(36)}`;
+    const slug = input.slug.trim();
+    const slugTaken = await this.prisma.tenant.findUnique({ where: { slug } });
+    if (slugTaken) throw new ConflictException('品牌已被占用');
     const platform = await this.prisma.tenant.findFirst({ where: { type: TenantType.PLATFORM } });
 
     return this.prisma.$transaction(async (tx) => {
@@ -121,7 +118,8 @@ export class AuthService {
     if (!ok) throw new UnauthorizedException('账号或密码错误');
 
     const tenants = await this.listTenants(user);
-    const current = user.isPlatformAdmin ? null : tenants[0] ?? null;
+    // 唯一/全部企业被停用的用户：登录成功但没有可用企业上下文（平台账号不受影响）。
+    const current = user.isPlatformAdmin ? null : tenants.find((t) => t.status === 'active') ?? null;
     this.setCookie(res, { sub: user.id, tenantId: current?.id ?? null });
 
     await this.prisma.auditLog.create({
@@ -139,9 +137,16 @@ export class AuthService {
     const tenants = await this.listTenants(user);
     const target = tenants.find((t) => t.id === tenantId);
     if (!target && !user.isPlatformAdmin) throw new ForbiddenException('无权切换到该租户');
-    if (user.isPlatformAdmin && !target) {
-      const t = await this.prisma.tenant.findUnique({ where: { id: tenantId } });
-      if (!t) throw new ForbiddenException('租户不存在');
+    let tenant: { status: string; type: TenantType } | null = target ?? null;
+    if (user.isPlatformAdmin && !tenant) {
+      const found = await this.prisma.tenant.findUnique({ where: { id: tenantId } });
+      if (!found) throw new ForbiddenException('租户不存在');
+      tenant = found;
+    }
+    if (tenant && tenant.status !== 'active') throw new ForbiddenException('企业已停用，无法进入');
+    // 平台代运营只针对业务租户；猛犸总部（PLATFORM）没有「工作台」语义。
+    if (user.isPlatformAdmin && tenant && tenant.type === TenantType.PLATFORM) {
+      throw new ForbiddenException('平台租户无需进入工作台');
     }
     this.setCookie(res, { sub: user.id, tenantId });
     await this.prisma.auditLog.create({
@@ -242,8 +247,8 @@ export class AuthService {
   ): Promise<SessionMe> {
     const current = tenants.find((t) => t.id === tenantId) ?? null;
     const eff = await computeEffectivePermissions(this.prisma, user.id, tenantId);
-    // Prefer Role assignment for isPlatformAdmin; keep DB flag as fallback cache
-    const isPlatformAdmin = eff.isPlatformAdmin || user.isPlatformAdmin;
+    // 总后台身份以角色权限为准（只授 experts 的自建角色不算平台管理员）
+    const isPlatformAdmin = eff.isPlatformAdmin;
     return {
       user: {
         id: user.id,

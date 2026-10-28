@@ -8,6 +8,9 @@ const ORG_PRESET_KEY: Record<MemberRole, string> = {
   MEMBER: 'org_member',
 };
 
+/** 拥有该权限 = 可进总后台（/admin）。 */
+export const ADMIN_ACCESS_PERM = 'portal.admin.access';
+
 export type EffectiveResult = {
   effectivePermissions: string[];
   platformRoleKey: string | null;
@@ -16,48 +19,44 @@ export type EffectiveResult = {
 
 type Db = PrismaService | Prisma.TransactionClient;
 
-/** platform RolePermission ∪ current-tenant org preset (union; no tenant → platform only). */
+/** 用户所有角色的权限并集；企业成员关系不再单独带角色。 */
 export async function computeEffectivePermissions(
   db: Db,
   userId: string,
-  tenantId: string | null,
+  _tenantId: string | null,
 ): Promise<EffectiveResult> {
-  const platform = await db.userPlatformRole.findUnique({
+  const rows = await db.userRole.findMany({
     where: { userId },
-    include: {
-      role: { include: { permissions: { select: { permKey: true } } } },
+    select: {
+      role: {
+        select: {
+          key: true,
+          scope: true,
+          permissions: { select: { permKey: true } },
+        },
+      },
     },
   });
 
   const keys = new Set<string>();
-  let platformRoleKey: string | null = null;
+  const platformRoles = rows
+    .map((row) => row.role)
+    .filter((role) => role.scope === 'PLATFORM');
 
-  if (platform?.role?.scope === 'PLATFORM') {
-    platformRoleKey = platform.role.key;
-    for (const p of platform.role.permissions) keys.add(p.permKey);
+  for (const role of rows.map((row) => row.role)) {
+    for (const p of role.permissions) keys.add(p.permKey);
   }
 
-  if (tenantId) {
-    const membership = await db.orgMember.findUnique({
-      where: { userId_tenantId: { userId, tenantId } },
-      select: { role: true },
-    });
-    if (membership) {
-      const presetKey = ORG_PRESET_KEY[membership.role];
-      const preset = await db.role.findUnique({
-        where: { key: presetKey },
-        include: { permissions: { select: { permKey: true } } },
-      });
-      if (preset) {
-        for (const p of preset.permissions) keys.add(p.permKey);
-      }
-    }
-  }
+  // 平台身份取超级管理员优先，其次第一个平台角色
+  const platformRoleKey = platformRoles.find((role) => role.key === 'super_admin')?.key
+    ?? platformRoles[0]?.key
+    ?? null;
 
   return {
     effectivePermissions: [...keys].sort(),
     platformRoleKey,
-    isPlatformAdmin: platformRoleKey != null,
+    // 总后台身份看权限，不看角色 scope：只有授了总后台权限才算平台管理员。
+    isPlatformAdmin: keys.has(ADMIN_ACCESS_PERM),
   };
 }
 

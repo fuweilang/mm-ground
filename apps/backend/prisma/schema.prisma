@@ -49,7 +49,7 @@ model User {
   memberships      OrgMember[]
   agentGrants      AgentGrant[]
   kbGrants         KbGrant[]
-  platformRole     UserPlatformRole?
+  roles            UserRole[]
 
   @@map("user")
 }
@@ -96,7 +96,8 @@ model OrgMember {
   id        String     @id @default(cuid())
   userId    String     @map("user_id")
   tenantId  String     @map("tenant_id")
-  role      MemberRole
+  /** 历史枚举，保留兼容；实际角色看 user_role。 */
+  role      MemberRole @default(MEMBER)
   user      User       @relation(fields: [userId], references: [id], onDelete: Cascade)
   tenant    Tenant     @relation(fields: [tenantId], references: [id], onDelete: Cascade)
   createdAt DateTime   @default(now()) @map("created_at")
@@ -246,7 +247,7 @@ model Role {
   createdAt   DateTime         @default(now()) @map("created_at")
   updatedAt   DateTime         @updatedAt @map("updated_at")
   permissions RolePermission[]
-  platformUsers UserPlatformRole[]
+  users       UserRole[]
 
   @@index([scope])
   @@map("role")
@@ -264,16 +265,17 @@ model RolePermission {
   @@map("role_permission")
 }
 
-model UserPlatformRole {
+/// 用户的角色：可以有多个，权限取并集；所属企业另外由 org_member 表示（只能一家）。
+model UserRole {
   id        String   @id @default(cuid())
-  userId    String   @unique @map("user_id")
+  userId    String   @map("user_id")
   roleId    String   @map("role_id")
   user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
-  role      Role     @relation(fields: [roleId], references: [id], onDelete: Restrict)
+  role      Role     @relation(fields: [roleId], references: [id], onDelete: Cascade)
   createdAt DateTime @default(now()) @map("created_at")
-  updatedAt DateTime @updatedAt @map("updated_at")
 
+  @@unique([userId, roleId])
   @@index([roleId])
-  @@map("user_platform_role")
+  @@map("user_role")
 }
 

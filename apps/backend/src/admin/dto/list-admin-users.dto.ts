@@ -5,7 +5,7 @@ export class ListAdminUsersDto {
   @IsString()
   keyword?: string;
 
-  /** `admin` = 平台管理员；`user` = 普通用户。 */
+  /** 角色筛选：super_admin / platform_admin / org_admin / org_member / none（普通用户）。 */
   @IsOptional()
   @IsString()
   role?: string;

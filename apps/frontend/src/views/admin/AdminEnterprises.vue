@@ -88,14 +88,40 @@
           {{ row.memberCount }}
         </template>
       </el-table-column>
-      <el-table-column label="操作" width="260" fixed="right" align="center">
+      <el-table-column label="操作" width="300" fixed="right" align="center">
         <template #default="{ row }">
           <div class="operation-buttons">
-            <el-button text type="primary" @click="openWorkbench(row)">
-              进入工作台
+            <el-button text type="primary" @click="openView(row)">
+              查看
+            </el-button>
+            <el-button
+              v-if="row.type !== 'PLATFORM'"
+              text
+              type="primary"
+              @click="openWorkbench(row)"
+            >
+              进入业务工作台
             </el-button>
             <el-button text type="primary" @click="openEdit(row)">
               编辑
+            </el-button>
+            <el-button
+              v-if="row.type !== 'PLATFORM' && row.status === 'active'"
+              text
+              type="warning"
+              :loading="statusChangingId === row.id"
+              @click="onDeactivate(row)"
+            >
+              停用
+            </el-button>
+            <el-button
+              v-if="row.type !== 'PLATFORM' && row.status !== 'active'"
+              text
+              type="success"
+              :loading="statusChangingId === row.id"
+              @click="onActivate(row)"
+            >
+              启用
             </el-button>
             <el-button
               text
@@ -134,6 +160,7 @@
     <el-dialog
       v-model="workbenchVisible"
       title="进入业务工作台"
+      class="enterprise-dialog"
       width="480px"
       :close-on-click-modal="false"
     >
@@ -147,10 +174,33 @@
     </el-dialog>
 
     <el-dialog
+      v-model="viewOpen"
+      title="查看企业"
+      class="enterprise-dialog"
+      width="480px"
+    >
+      <el-descriptions v-if="viewingRow" :column="1" border>
+        <el-descriptions-item label="名称">
+          {{ viewingRow.name }}
+        </el-descriptions-item>
+        <el-descriptions-item label="品牌">
+          {{ viewingRow.slug }}
+        </el-descriptions-item>
+        <el-descriptions-item label="账号状态">
+          {{ statusLabel(viewingRow.status) }}
+        </el-descriptions-item>
+      </el-descriptions>
+      <template #footer>
+        <el-button @click="viewOpen = false">关闭</el-button>
+      </template>
+    </el-dialog>
+
+    <el-dialog
       v-model="open"
       :title="editingId ? '编辑企业' : '新建企业'"
+      class="enterprise-dialog"
       width="480px"
-      @close="resetForm"
+      :close-on-click-modal="false"
     >
       <el-form ref="formRef" :model="form" :rules="rules" label-width="88px">
         <el-form-item label="名称" prop="name">
@@ -158,12 +208,6 @@
         </el-form-item>
         <el-form-item label="品牌" prop="slug">
           <el-input v-model="form.slug" maxlength="80" placeholder="请输入品牌" />
-        </el-form-item>
-        <el-form-item v-if="editingId" label="状态">
-          <el-select v-model="form.status" style="width: 100%">
-            <el-option label="激活" value="active" />
-            <el-option label="停用" value="inactive" />
-          </el-select>
         </el-form-item>
       </el-form>
       <template #footer>
@@ -175,9 +219,8 @@
 </template>
 
 <script setup lang="ts">
-import { computed, onBeforeUnmount, onMounted, reactive, ref } from 'vue';
+import { computed, h, onBeforeUnmount, onMounted, reactive, ref, type VNode } from 'vue';
 import { ElMessage, ElMessageBox, type FormInstance, type FormRules } from 'element-plus';
-import { useRouter } from 'vue-router';
 import { Search } from 'lucide-vue-next';
 import { adminEnterpriseApi, type AdminEnterpriseRow } from '../../api/admin';
 import { useAuthStore } from '../../stores/auth';
@@ -185,21 +228,23 @@ import { useAuthStore } from '../../stores/auth';
 const ENTERPRISE_COLORS = ['#7c3aed', '#0891b2', '#c2410c', '#15803d', '#be123c', '#4f46e5', '#a16207', '#0f766e'];
 
 const auth = useAuthStore();
-const router = useRouter();
 const rows = ref<AdminEnterpriseRow[]>([]);
 const loading = ref(false);
 const open = ref(false);
 const saving = ref(false);
 const editingId = ref('');
 const deletingId = ref('');
+const statusChangingId = ref('');
 const entering = ref(false);
 const workbenchVisible = ref(false);
 const workbenchEnterprise = ref<AdminEnterpriseRow | null>(null);
+const viewOpen = ref(false);
+const viewingRow = ref<AdminEnterpriseRow | null>(null);
 const nameDraft = ref('');
 const slugDraft = ref('');
 const statusFilter = ref('');
 const currentPage = ref(1);
-const pageSize = ref(10);
+const pageSize = ref(20);
 const formRef = ref<FormInstance>();
 let searchTimer = 0;
 let requestSequence = 0;
@@ -207,7 +252,6 @@ let requestSequence = 0;
 const form = reactive({
   name: '',
   slug: '',
-  status: 'active',
 });
 
 const rules: FormRules = {
@@ -288,7 +332,6 @@ function resetForm() {
   editingId.value = '';
   form.name = '';
   form.slug = '';
-  form.status = 'active';
   formRef.value?.clearValidate();
 }
 
@@ -298,11 +341,16 @@ function openCreate() {
 }
 
 function openEdit(row: AdminEnterpriseRow) {
+  resetForm();
   editingId.value = row.id;
   form.name = row.name;
   form.slug = row.slug;
-  form.status = row.status;
   open.value = true;
+}
+
+function openView(row: AdminEnterpriseRow) {
+  viewingRow.value = row;
+  viewOpen.value = true;
 }
 
 async function load() {
@@ -329,7 +377,6 @@ async function onSave() {
       await adminEnterpriseApi.update(editingId.value, {
         name: form.name.trim(),
         slug: form.slug.trim(),
-        status: form.status,
       });
       ElMessage.success('已保存');
     } else {
@@ -361,16 +408,86 @@ async function openWorkbench(row: AdminEnterpriseRow) {
 async function confirmWorkbench() {
   const row = workbenchEnterprise.value;
   if (!row) return;
+  // 与 PeecAI 一致：新标签打开业务工作台，原总后台标签保留。
+  const tab = window.open('about:blank', '_blank');
+  if (!tab) {
+    ElMessage.warning('浏览器拦截了新标签，请允许弹出窗口后重试');
+    return;
+  }
   entering.value = true;
   try {
     await auth.switchTenant(row.id);
     workbenchVisible.value = false;
-    ElMessage.success(`已进入「${row.name}」业务工作台`);
-    await router.push('/console/');
+    // 先完成 switchTenant（cookie 落地）再导航，新标签加载 /console/ 时会话已就绪。
+    tab.opener = null;
+    tab.location.assign(`${window.location.origin}/console/`);
+    ElMessage.success('已在新标签打开业务工作台');
   } catch (e) {
+    tab.close();
     ElMessage.error(e instanceof Error ? e.message : '进入工作台失败');
   } finally {
     entering.value = false;
+  }
+}
+
+/** 确认弹窗里需要强调的文本（企业名、用户等），与用户删除确认框保持同款蓝色。 */
+function highlight(text: string) {
+  return h('span', { style: { color: '#2563eb', fontWeight: 600 } }, text);
+}
+
+async function onDeactivate(row: AdminEnterpriseRow) {
+  try {
+    await ElMessageBox.confirm(
+      h('span', null, [
+        '停用后「',
+        highlight(row.name),
+        '」的管理员与成员将无法使用该企业的控制台与智能体。确定停用？',
+      ]),
+      '停用企业',
+      {
+        type: 'warning',
+        confirmButtonText: '停用',
+        confirmButtonClass: 'el-button--danger',
+        customClass: 'enterprise-confirm',
+      },
+    );
+  } catch {
+    return;
+  }
+  statusChangingId.value = row.id;
+  try {
+    await adminEnterpriseApi.update(row.id, { status: 'inactive' });
+    ElMessage.success('已停用');
+    await load();
+    // 若当前正代运营该企业，刷新会话让守卫把人带离停用租户。
+    await auth.load();
+  } catch (e) {
+    ElMessage.error(e instanceof Error ? e.message : '停用失败');
+  } finally {
+    statusChangingId.value = '';
+  }
+}
+
+async function onActivate(row: AdminEnterpriseRow) {
+  try {
+    await ElMessageBox.confirm(
+      h('span', null, ['启用后「', highlight(row.name), '」的管理员与成员恢复使用。确定启用？']),
+      '启用企业',
+      { type: 'info', confirmButtonText: '启用', customClass: 'enterprise-confirm' },
+    );
+  } catch {
+    return;
+  }
+  statusChangingId.value = row.id;
+  try {
+    await adminEnterpriseApi.update(row.id, { status: 'active' });
+    ElMessage.success('已启用');
+    await load();
+    await auth.load();
+  } catch (e) {
+    ElMessage.error(e instanceof Error ? e.message : '启用失败');
+  } finally {
+    statusChangingId.value = '';
   }
 }
 
@@ -381,24 +498,34 @@ async function onDelete(row: AdminEnterpriseRow) {
       ElMessage.warning(`不能删除：${impact.blockedReasons.join('、')}`);
       return;
     }
-    const lines = [`确定删除企业「${row.name}」？删除后不可恢复。`];
+    const lines = [
+      h('p', { class: 'confirm-line' }, ['确定删除企业「', highlight(row.name), '」？删除后不可恢复。']),
+    ];
     if (impact.deletedUsers.length > 0) {
-      const users = impact.deletedUsers.map((user) => `${user.name}（${user.phone}）`).join('、');
-      lines.push(`将同时删除 ${impact.deletedUsers.length} 个只属于该企业的用户：${users}`);
+      const users: (string | VNode)[] = [];
+      impact.deletedUsers.forEach((user, index) => {
+        if (index > 0) users.push('、');
+        users.push(highlight(`${user.name}（${user.phone}）`));
+      });
+      lines.push(
+        h('p', { class: 'confirm-line' }, [`将同时删除 ${impact.deletedUsers.length} 个只属于该企业的用户：`, ...users]),
+      );
     } else {
-      lines.push('没有只属于该企业的用户需要删除。');
+      lines.push(h('p', { class: 'confirm-line' }, ['没有只属于该企业的用户需要删除。']));
     }
     if (impact.unboundMemberCount > 0) {
-      lines.push(`另有 ${impact.unboundMemberCount} 个成员只解除企业关系，账号保留。`);
+      lines.push(
+        h('p', { class: 'confirm-line' }, [`另有 ${impact.unboundMemberCount} 个成员只解除企业关系，账号保留。`]),
+      );
     }
     if (impact.usageEventCount > 0) {
-      lines.push(`该企业的 ${impact.usageEventCount} 条用量记录将一并清除。`);
+      lines.push(h('p', { class: 'confirm-line' }, [`该企业的 ${impact.usageEventCount} 条用量记录将一并清除。`]));
     }
-    await ElMessageBox.confirm(lines.join('\n'), '删除企业', {
+    await ElMessageBox.confirm(h('div', null, lines), '删除企业', {
       type: 'warning',
       confirmButtonText: '删除',
       confirmButtonClass: 'el-button--danger',
-      customClass: 'enterprise-delete-confirm',
+      customClass: 'enterprise-confirm',
     });
   } catch {
     return;
@@ -522,11 +649,6 @@ onBeforeUnmount(() => {
   width: 7px;
 }
 
-:global(.enterprise-delete-confirm .el-message-box__message) {
-  white-space: pre-line;
-  line-height: 1.7;
-}
-
 .operation-buttons {
   align-items: center;
   display: flex;
@@ -608,6 +730,132 @@ onBeforeUnmount(() => {
   .enterprise-pagination {
     justify-content: flex-start;
     overflow-x: auto;
+  }
+}
+</style>
+
+<!-- 弹窗与确认框渲染在 body（teleport）下，scoped 样式无法命中弹窗结构节点，这里用全局样式（同 AdminRoles） -->
+<style>
+/* 弹窗统一风格：方角、细分隔线、13px 正文 */
+.enterprise-dialog {
+  border-radius: 0;
+  max-width: calc(100vw - 32px);
+}
+
+.enterprise-dialog .el-dialog__header {
+  border-bottom: 1px solid #dfe5ef;
+  margin-right: 0;
+  padding: 18px 24px;
+}
+
+.enterprise-dialog .el-dialog__title {
+  color: #333946;
+  font-size: 16px;
+  font-weight: 600;
+}
+
+.enterprise-dialog .el-dialog__headerbtn {
+  height: 52px;
+  width: 52px;
+}
+
+.enterprise-dialog .el-dialog__body {
+  color: #333946;
+  font-size: 13px;
+  padding: 22px 24px;
+}
+
+.enterprise-dialog .el-dialog__footer {
+  border-top: 1px solid #dfe5ef;
+  padding: 14px 24px;
+}
+
+.enterprise-dialog .el-dialog__footer .el-button + .el-button {
+  margin-left: 8px;
+}
+
+.enterprise-dialog .el-form-item {
+  margin-bottom: 18px;
+}
+
+.enterprise-dialog .el-form-item:last-child {
+  margin-bottom: 0;
+}
+
+.enterprise-dialog .el-form-item__label {
+  color: #667085;
+  font-weight: 400;
+}
+
+.enterprise-dialog .el-descriptions__label {
+  background: #f8fafc;
+  color: #667085;
+  font-weight: 400;
+  text-align: right;
+  width: 96px;
+}
+
+.enterprise-dialog .el-descriptions__content {
+  color: #333946;
+}
+
+.enterprise-dialog .el-descriptions__cell {
+  padding: 10px 14px;
+}
+
+/* ElMessageBox 确认框与页面弹窗同款 */
+.enterprise-confirm {
+  border-radius: 0;
+  padding: 0;
+  width: 480px;
+}
+
+.enterprise-confirm .el-message-box__header {
+  border-bottom: 1px solid #dfe5ef;
+  padding: 18px 24px;
+}
+
+.enterprise-confirm .el-message-box__title {
+  color: #333946;
+  font-size: 16px;
+  font-weight: 600;
+}
+
+.enterprise-confirm .el-message-box__content {
+  color: #667085;
+  font-size: 13px;
+  padding: 22px 24px;
+}
+
+.enterprise-confirm .el-message-box__message {
+  line-height: 1.7;
+  white-space: pre-line;
+}
+
+.enterprise-confirm .el-message-box__message .confirm-line {
+  margin: 0;
+}
+
+.enterprise-confirm .el-message-box__message .confirm-line + .confirm-line {
+  margin-top: 6px;
+}
+
+.enterprise-confirm .el-message-box__btns {
+  border-top: 1px solid #dfe5ef;
+  padding: 14px 24px;
+}
+
+.enterprise-confirm .el-message-box__btns .el-button + .el-button {
+  margin-left: 8px;
+}
+
+@media (max-width: 768px) {
+  .enterprise-dialog {
+    width: calc(100vw - 32px) !important;
+  }
+
+  .enterprise-confirm {
+    width: calc(100vw - 32px);
   }
 }
 </style>

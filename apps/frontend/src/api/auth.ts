@@ -7,7 +7,7 @@ export const authApi = {
       method: 'POST',
       body: JSON.stringify({ phone, password }),
     }),
-  register: (body: { name: string; phone: string; password: string; enterpriseName: string }) =>
+  register: (body: { name: string; phone: string; password: string; enterpriseName: string; slug: string }) =>
     http<SessionMe>('/api/auth/register', {
       method: 'POST',
       body: JSON.stringify(body),

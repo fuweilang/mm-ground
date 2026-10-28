@@ -18,7 +18,12 @@
 
           <label v-if="mode === 'register'" class="field">
             <span>姓名</span>
-            <el-input v-model="form.name" placeholder="请输入姓名" maxlength="40" />
+            <el-input
+              v-model="form.name"
+              placeholder="请输入姓名"
+              maxlength="40"
+              @input="form.name = form.name.replace(/[^\u4e00-\u9fa5a-zA-Z0-9\s·.\-_（）()]/g, '')"
+            />
           </label>
 
           <label class="field">
@@ -34,7 +39,23 @@
 
           <label v-if="mode === 'register'" class="field">
             <span>企业/主体名称</span>
-            <el-input v-model="form.enterpriseName" placeholder="请输入企业或经营主体名称" maxlength="160" />
+            <el-input
+              v-model="form.enterpriseName"
+              placeholder="请输入企业或经营主体名称"
+              maxlength="80"
+              @input="form.enterpriseName = form.enterpriseName.replace(/[^\u4e00-\u9fa5a-zA-Z0-9\s·.\-_（）()、，,&/]/g, '')"
+            />
+          </label>
+
+          <label v-if="mode === 'register'" class="field">
+            <span>品牌</span>
+            <el-input
+              v-model="form.slug"
+              placeholder="品牌标识，如 腾讯 / tencent"
+              maxlength="40"
+              @input="form.slug = form.slug.replace(/[^\u4e00-\u9fa5a-zA-Z0-9\-_]/g, '')"
+            />
+            <span class="field-hint">中英文、数字、短横线或下划线，1～40 位，全局唯一，注册后可在企业设置中修改</span>
           </label>
 
           <label class="field">
@@ -96,6 +117,7 @@ const form = reactive({
   name: '',
   phone: '',
   enterpriseName: '',
+  slug: '',
   password: '',
   agree: true,
 });
@@ -258,6 +280,11 @@ async function goAfterLogin() {
     window.location.href = '/admin';
     return;
   }
+  // 企业管理员（有企业控制台权限且有可用企业）登录后直接进控制台，其余人进智能体。
+  if (auth.session?.currentTenant && canAccessConsole(auth.session)) {
+    window.location.href = '/console/';
+    return;
+  }
   await startOctopSession();
 }
 
@@ -278,6 +305,10 @@ async function onSubmit() {
     ElMessage.warning('请输入企业/主体名称');
     return;
   }
+  if (mode.value === 'register' && !/^[\u4e00-\u9fa5a-zA-Z0-9\-_]{1,40}$/.test(form.slug)) {
+    ElMessage.warning('请输入品牌：中英文、数字、短横线或下划线，1～40 位');
+    return;
+  }
 
   loading.value = true;
   try {
@@ -287,6 +318,7 @@ async function onSubmit() {
         phone: form.phone,
         password: form.password,
         enterpriseName: form.enterpriseName.trim(),
+        slug: form.slug,
       });
       ElMessage.success('注册成功');
     } else {
@@ -402,6 +434,11 @@ async function onSubmit() {
   color: #666;
   font-size: 13px;
   font-weight: 500;
+}
+.field-hint {
+  color: #98a2b3;
+  font-size: 12px;
+  line-height: 1.5;
 }
 .agreement {
   color: #666;
