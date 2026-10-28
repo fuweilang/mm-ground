@@ -13,7 +13,7 @@
 | 路径 | `agentPlatform/Octop` |
 | HEAD | `dd9dce47` 2026-10-18 `Merge PR #2184 release/1.0.2` |
 | 分支/远端 | `main` → `github.com:TencentCloud/Octop` |
-| 版本 | `pyproject.toml:7` + `src/octop/__init__.py:7` = **1.0.2**（两处手工同步） |
+| 版本 | `pyproject.toml:7` + `src/octop/__init__.py:7` = **1.1.0**（两处手工同步） |
 | tracked 文件 | 4,056 |
 | 后端 | `src/octop/` **692 个 .py / 159,149 行**（infra 520/119,029；api 108/32,025；cli 47/6,372；i18n 13/905） |
 | 前端 | `dashboard/src/` **1,286 文件 / 241,859 行**（pages 697/186,488） |
@@ -208,7 +208,7 @@ scripts(13)：`dev`、`build`、**`build:docker`（跳过 tsc，镜像用 → �
 ## 14. 周边
 
 - **`desktop/` = Wails v3（Go 桌面壳），不是 Electron/Tauri**：`desktop/src/`(Go 1.25+，wails v3.0.0-beta.13；`embed_portable.go`/`download.go`/`tray_click.go`/`portable_upgrade.go`；`cmd/devserver`) 负责加载内置 portable zip → 解压 `~/.octop/portable/` → spawn Octop 服务 → 托盘/设置窗；`desktop/portable/`(`bootstrap-runtime.sh`/`vendor-wheels.sh`/`package-linux-docker.sh`/`Makefile green`)；`desktop/package-release.sh` = build dashboard → 造 portable runtime → 嵌入 Wails → 出安装包（Windows 需 NSIS）。CI `octop-desktop.yml` 六平台矩阵（PR 只跑 darwin+windows，tag/dispatch 全跑，用 Node 24）。
-- **`fnos/` = 飞牛 fnOS 应用中心 FPK**：`fnos/docker/`（appname=octop、version=1.0.2、service_port **8088**、装时拉 ghcr 同版本镜像；`cmd/{install,uninstall,upgrade,config}_{init,callback}` + `wizard/*` + `app/ui`）与 `fnos/native/`（service_port **8089**、`install_dep_apps=python312`）。构建 `scripts/build-fpk.sh` + `scripts/fnos/{common,slim-site-packages,store_version}.sh`，CI `fnos-build-fpk.yml`。
+- **`fnos/` = 飞牛 fnOS 应用中心 FPK**：`fnos/docker/`（appname=octop、version=1.1.0、service_port **8088**、装时拉 ghcr 同版本镜像；`cmd/{install,uninstall,upgrade,config}_{init,callback}` + `wizard/*` + `app/ui`）与 `fnos/native/`（service_port **8089**、`install_dep_apps=python312`）。构建 `scripts/build-fpk.sh` + `scripts/fnos/{common,slim-site-packages,store_version}.sh`，CI `fnos-build-fpk.yml`。
 - **`docker/`**：`docker-compose.yml` **单服务 `octop`**（build 仓库根 + `docker/Dockerfile`，`restart: unless-stopped`，ulimits nofile 65535，端口 `${OCTOP_PORT:-8088}`，卷 `${OCTOP_DATA:-~/.octop}:/data/.octop`，`HOME=/data`，透传 OCTOP_BIND_HOST/PORT/DEFAULT_PASSWORD/ADMIN_USERNAME、DB 变量、OPENAI/DASHSCOPE key、Langfuse）；`docker-compose.cn.yml`（不构建，镜像 `ghcr.nju.edu.cn/tencentcloud/octop:latest`）；`docker-compose.postgres.yml`（pgvector/pg16，`postgres/init-vector.sql` 注 initdb.d）；`docker-compose.mobile.yml`（Redroid，`network_mode: host`，需 `/dev/binder`）；`docker_build.sh`（BuildKit + 腾讯镜像源）；`docker-entrypoint.sh`（校验 `OCTOP_DEFAULT_PASSWORD` ≥8 位含字母数字 + 弱口令黑名单 → `octop init` 建管理员，否则写向导口令到 `/data/.octop/octop-login.txt`；`.initialized` 标记防 PG 重复 init）。Dockerfile 两阶段：`node:20-slim`(`npm ci` + `npm run build:docker`) → `python:3.12-slim`(uv 装 wheel，`UV_LINK_MODE=copy`、`UV_PYTHON_DOWNLOADS=never`)。
 - **`scripts/`**：`install.sh`/`install.ps1`/`install.bat`（终端用户一键装：隔离 venv `~/.octop/venv` + `bin/octop` 包装器，支持 `--version/--mirror/--extras browser/--from-source`）、`install-octop.sh`、`wheel_build.sh`/`.ps1`、`build-fpk.sh`、`release_download_links.py`（生成 Release 的 COS 链接段）、`run-discord-local.sh`、`smoke_memory_api.py`、`ci/upload_release_cos.sh`、`fnos/*`。
 - **工具链**：`mise.toml` = python 3.12 / node 20 / npm 10 / uv latest（desktop 用 node 24）。

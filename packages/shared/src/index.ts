@@ -1,3 +1,4 @@
+export { APP_VERSION } from './version';
 export const APP_NAME = '猛犸智能体';
 
 export const TenantType = {

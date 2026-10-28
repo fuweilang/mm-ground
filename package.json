@@ -10,15 +10,16 @@
     "dev:api": "pnpm --filter @mammoth/backend start:dev",
     "dev:web": "pnpm --filter @mammoth/frontend dev",
     "dev:gateway": "node scripts/dev-gateway.mjs",
-    "octop": "concurrently -n octop,dash -c magenta,cyan \"cd ../Octop && OCTOP_MAMMOTH_OIDC_ISSUER=http://127.0.0.1:5201/console/api/oidc ./start\" \"VITE_DEV_PORT=5203 VITE_HMR_CLIENT_PORT=5201 npm --prefix ../Octop/dashboard run dev\"",
-    "dev:octop": "cd ../Octop && OCTOP_MAMMOTH_OIDC_ISSUER=http://127.0.0.1:5201/console/api/oidc ./start",
+    "octop": "export MAMMOTH_APP_VERSION=$(node -p \"require('./config/version.json').version\") && concurrently -n octop,dash -c magenta,cyan \"cd ../Octop && OCTOP_MAMMOTH_OIDC_ISSUER=http://127.0.0.1:5201/console/api/oidc MAMMOTH_APP_VERSION=$MAMMOTH_APP_VERSION ./start\" \"VITE_DEV_PORT=5203 VITE_HMR_CLIENT_PORT=5201 MAMMOTH_APP_VERSION=$MAMMOTH_APP_VERSION npm --prefix ../Octop/dashboard run dev\"",
+    "dev:octop": "export MAMMOTH_APP_VERSION=$(node -p \"require('./config/version.json').version\") && cd ../Octop && OCTOP_MAMMOTH_OIDC_ISSUER=http://127.0.0.1:5201/console/api/oidc MAMMOTH_APP_VERSION=$MAMMOTH_APP_VERSION ./start",
     "dev:agent": "VITE_DEV_PORT=5203 VITE_HMR_CLIENT_PORT=5201 npm --prefix ../Octop/dashboard run dev",
     "dev:desktop": "node scripts/dev-desktop.mjs",
     "build": "pnpm --filter @mammoth/shared build && pnpm --filter @mammoth/backend build && pnpm --filter @mammoth/frontend build",
     "db:up": "docker compose -f infra/docker-compose.yml up -d",
     "db:down": "docker compose -f infra/docker-compose.yml down",
     "db:migrate": "pnpm --filter @mammoth/backend prisma:migrate",
-    "db:seed": "pnpm --filter @mammoth/backend prisma:seed"
+    "db:seed": "pnpm --filter @mammoth/backend prisma:seed",
+    "version:sync": "node scripts/sync-mammoth-version.mjs"
   },
   "devDependencies": {
     "concurrently": "^9.1.2",
