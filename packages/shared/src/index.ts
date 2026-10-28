@@ -68,10 +68,37 @@ export const AuditActionLabel: Record<string, string> = {
   update_enterprise_logo: '更新企业 Logo',
 };
 
+export function hasPermission(
+  session: SessionMe | null | undefined,
+  key: string,
+): boolean {
+  if (!session) return false;
+  const perms = session.effectivePermissions;
+  if (Array.isArray(perms)) return perms.includes(key);
+  return false;
+}
+
+/** Prefer portal.console.access; fall back to role/boolean for old clients. */
 export function canAccessConsole(session: SessionMe | null | undefined): boolean {
   if (!session) return false;
+  const perms = session.effectivePermissions;
+  if (Array.isArray(perms)) {
+    if (perms.includes('portal.console.access')) return true;
+    // Platform admin 代运营进企业：种子平台包通常无 console.access，仍放行
+    if (session.user.isPlatformAdmin && session.currentTenant) return true;
+    // 有权限数组且非上述 → MEMBER 等无 console
+    if (!session.user.isPlatformAdmin) return false;
+  }
   if (session.user.isPlatformAdmin) return true;
   return session.currentRole === MemberRole.OWNER || session.currentRole === MemberRole.ADMIN;
+}
+
+/** Prefer portal.admin.access; fall back to isPlatformAdmin. */
+export function canAccessAdmin(session: SessionMe | null | undefined): boolean {
+  if (!session) return false;
+  const perms = session.effectivePermissions;
+  if (Array.isArray(perms) && perms.includes('portal.admin.access')) return true;
+  return Boolean(session.user.isPlatformAdmin);
 }
 
 export type PublicUser = {
@@ -80,6 +107,7 @@ export type PublicUser = {
   email: string | null;
   phone: string | null;
   isPlatformAdmin: boolean;
+  platformRoleKey?: string | null;
 };
 
 export type PublicTenant = {
@@ -95,4 +123,7 @@ export type SessionMe = {
   currentTenant: PublicTenant | null;
   currentRole: MemberRole | null;
   tenants: Array<PublicTenant & { role: MemberRole | null }>;
+  /** Sorted unique permission keys (platform ∪ org preset). */
+  effectivePermissions: string[];
+  platformRoleKey: string | null;
 };

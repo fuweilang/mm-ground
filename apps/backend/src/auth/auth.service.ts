@@ -13,6 +13,7 @@ import { AccessScope, MemberRole, Prisma, TenantType, User } from '@prisma/clien
 import { DEFAULT_AGENT_PERSONA } from '../agent/personas';
 import { PrismaService } from '../prisma/prisma.service';
 import { SessionMe } from '@mammoth/shared';
+import { computeEffectivePermissions } from '../permissions/effective';
 import { JwtPayload } from './jwt.guard';
 
 @Injectable()
@@ -126,12 +127,12 @@ export class AuthService {
     await this.prisma.auditLog.create({
       data: { userId: user.id, tenantId: current?.id, action: 'login', ip },
     });
-    return this.toMe(user, current?.id ?? null, tenants);
+    return await this.toMe(user, current?.id ?? null, tenants);
   }
 
   async me(user: User, tenantId: string | null): Promise<SessionMe> {
     const tenants = await this.listTenants(user);
-    return this.toMe(user, tenantId, tenants);
+    return await this.toMe(user, tenantId, tenants);
   }
 
   async switchTenant(user: User, tenantId: string, res: Response) {
@@ -234,19 +235,23 @@ export class AuthService {
     return memberships.map((m) => ({ ...m.tenant, role: m.role }));
   }
 
-  private toMe(
+  private async toMe(
     user: User,
     tenantId: string | null,
     tenants: Array<Prisma.TenantGetPayload<object> & { role: MemberRole | null }>,
-  ): SessionMe {
+  ): Promise<SessionMe> {
     const current = tenants.find((t) => t.id === tenantId) ?? null;
+    const eff = await computeEffectivePermissions(this.prisma, user.id, tenantId);
+    // Prefer Role assignment for isPlatformAdmin; keep DB flag as fallback cache
+    const isPlatformAdmin = eff.isPlatformAdmin || user.isPlatformAdmin;
     return {
       user: {
         id: user.id,
         name: user.name,
         email: user.email,
         phone: user.phone,
-        isPlatformAdmin: user.isPlatformAdmin,
+        isPlatformAdmin,
+        platformRoleKey: eff.platformRoleKey,
       },
       currentTenant: current
         ? { id: current.id, name: current.name, slug: current.slug, type: current.type, status: current.status }
@@ -260,6 +265,8 @@ export class AuthService {
         status: t.status,
         role: t.role,
       })),
+      effectivePermissions: eff.effectivePermissions,
+      platformRoleKey: eff.platformRoleKey,
     };
   }
 }

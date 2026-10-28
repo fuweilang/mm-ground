@@ -90,7 +90,9 @@ export class OidcController {
       throw new UnauthorizedException('invalid_token');
     }
     if (typeof claims.sub !== 'string') throw new UnauthorizedException('invalid_token');
-    return this.oidc.userinfo(claims.sub);
+    const tenantRaw = claims['tenant_id'];
+    const tenantId = typeof tenantRaw === 'string' ? tenantRaw : null;
+    return this.oidc.userinfo(claims.sub, tenantId);
   }
 
   private async userFromCookie(req: Request) {

@@ -16,7 +16,6 @@
             @click="download(item.id)"
           >
             <span>{{ item.label }}</span>
-            <span v-if="item.id === primaryPlatform" class="client-download-recommended">推荐</span>
           </el-dropdown-item>
         </el-dropdown-menu>
       </template>
@@ -132,9 +131,4 @@ function download(platform: ClientPlatform) {
   width: 14px;
 }
 
-.client-download-recommended {
-  color: #2563eb;
-  font-size: 12px;
-  margin-left: 8px;
-}
 </style>

@@ -13,6 +13,7 @@ export type AdminUserRow = {
   phone: string;
   email: string | null;
   isPlatformAdmin: boolean;
+  platformRoleKey?: string | null;
   status: string;
   createdAt: string;
   tenants: AdminUserTenant[];
@@ -34,6 +35,7 @@ export type AdminUserCreate = {
   password: string;
   isPlatformAdmin: boolean;
   tenantId?: string;
+  platformRoleKey?: 'super_admin' | 'platform_admin';
 };
 
 export type AdminUserUpdate = {
@@ -41,6 +43,34 @@ export type AdminUserUpdate = {
   isPlatformAdmin?: boolean;
   status?: string;
   password?: string;
+  platformRoleKey?: 'super_admin' | 'platform_admin' | null;
+};
+
+export type AdminRoleRow = {
+  id: string;
+  key: string;
+  name: string;
+  description: string | null;
+  scope: 'PLATFORM' | 'ORG_PRESET';
+  builtIn: boolean;
+  editable: boolean;
+  permissionsLocked: boolean;
+  permissions: string[];
+  userCount: number;
+};
+
+export type PermissionCatalogGroup = {
+  category: string;
+  labelZh: string;
+  labelEn: string;
+  items: Array<{
+    key: string;
+    labelZh: string;
+    labelEn: string;
+    page?: string;
+    pageZh?: string;
+    pageEn?: string;
+  }>;
 };
 
 export type AdminEnterpriseCreate = {
@@ -79,4 +109,19 @@ export const adminEnterpriseApi = {
   update: (id: string, body: AdminEnterpriseUpdate) =>
     adminHttp<AdminEnterpriseRow>(`/enterprises/${id}`, { method: 'PATCH', body: JSON.stringify(body) }),
   remove: (id: string) => adminHttp<{ ok: boolean }>(`/enterprises/${id}`, { method: 'DELETE' }),
+};
+export const adminRoleApi = {
+  list: (params: { keyword?: string } = {}) => {
+    const qs = new URLSearchParams();
+    if (params.keyword) qs.set('keyword', params.keyword);
+    const query = qs.toString();
+    return adminHttp<AdminRoleRow[]>(`/roles${query ? `?${query}` : ''}`);
+  },
+  get: (id: string) => adminHttp<AdminRoleRow>(`/roles/${id}`),
+  update: (id: string, body: { name?: string; description?: string | null; permissions?: string[] }) =>
+    adminHttp<AdminRoleRow>(`/roles/${id}`, { method: 'PATCH', body: JSON.stringify(body) }),
+};
+
+export const adminPermissionApi = {
+  catalog: () => adminHttp<{ categories: PermissionCatalogGroup[] }>('/permissions/catalog'),
 };

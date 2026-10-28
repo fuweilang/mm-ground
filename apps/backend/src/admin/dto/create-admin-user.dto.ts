@@ -1,4 +1,4 @@
-import { IsBoolean, IsOptional, IsString, Matches, MinLength } from 'class-validator';
+import { IsBoolean, IsIn, IsOptional, IsString, Matches, MinLength } from 'class-validator';
 
 export class CreateAdminUserDto {
   @IsString()
@@ -18,4 +18,9 @@ export class CreateAdminUserDto {
   @IsOptional()
   @IsString()
   tenantId?: string;
+
+  /** Optional; when isPlatformAdmin, defaults to platform_admin. */
+  @IsOptional()
+  @IsIn(['super_admin', 'platform_admin'])
+  platformRoleKey?: 'super_admin' | 'platform_admin';
 }

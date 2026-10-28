@@ -89,7 +89,7 @@
         <template #default="{ row }">
           <el-tag class="identity-tag" size="small" :style="identityTagStyle(row.isPlatformAdmin)">
             <span class="visual-dot" :style="{ backgroundColor: identityColor(row.isPlatformAdmin) }" />
-            {{ roleLabel(row.isPlatformAdmin) }}
+            {{ roleLabel(row) }}
           </el-tag>
         </template>
       </el-table-column>
@@ -189,9 +189,15 @@
           />
         </el-form-item>
         <el-form-item label="角色" prop="isPlatformAdmin">
-          <el-select v-model="form.isPlatformAdmin" style="width: 100%">
+          <el-select v-model="form.isPlatformAdmin" style="width: 100%" @change="onPlatformAdminChange">
             <el-option label="普通用户" :value="false" />
             <el-option label="平台管理员" :value="true" />
+          </el-select>
+        </el-form-item>
+        <el-form-item v-if="form.isPlatformAdmin" label="平台角色">
+          <el-select v-model="form.platformRoleKey" style="width: 100%">
+            <el-option label="平台管理员 (platform_admin)" value="platform_admin" />
+            <el-option label="超级管理员 (super_admin)" value="super_admin" />
           </el-select>
         </el-form-item>
         <el-form-item v-if="!editingId && !form.isPlatformAdmin" label="所属企业" prop="tenantId">
@@ -248,9 +254,14 @@ const form = reactive({
   phone: '',
   password: '',
   isPlatformAdmin: false,
+  platformRoleKey: 'platform_admin' as 'super_admin' | 'platform_admin',
   tenantId: '',
   status: 'active',
 });
+
+function onPlatformAdminChange(v: boolean) {
+  if (v && !form.platformRoleKey) form.platformRoleKey = 'platform_admin';
+}
 
 const currentUserId = computed(() => auth.session?.user.id || '');
 
@@ -306,8 +317,12 @@ const pagedRows = computed(() => {
   return filteredRows.value.slice(start, start + pageSize.value);
 });
 
-function roleLabel(isPlatformAdmin: boolean) {
-  return isPlatformAdmin ? '平台管理员' : '普通用户';
+function roleLabel(row: AdminUserRow | boolean) {
+  if (typeof row === 'boolean') return row ? '平台管理员' : '普通用户';
+  if (!row.isPlatformAdmin) return '普通用户';
+  if (row.platformRoleKey === 'super_admin') return '超级管理员';
+  if (row.platformRoleKey === 'platform_admin') return '平台管理员';
+  return '平台管理员';
 }
 
 function statusLabel(status: string) {
@@ -387,6 +402,7 @@ function resetForm() {
   form.phone = '';
   form.password = '';
   form.isPlatformAdmin = false;
+  form.platformRoleKey = 'platform_admin';
   form.tenantId = '';
   form.status = 'active';
   formRef.value?.clearValidate();
@@ -403,6 +419,7 @@ function openEdit(row: AdminUserRow) {
   form.phone = row.phone;
   form.password = '';
   form.isPlatformAdmin = row.isPlatformAdmin;
+  form.platformRoleKey = row.platformRoleKey === 'super_admin' ? 'super_admin' : 'platform_admin';
   form.tenantId = row.tenants[0]?.id ?? '';
   form.status = row.status;
   open.value = true;
@@ -444,6 +461,7 @@ async function onSave() {
       await adminUserApi.update(editingId.value, {
         name: form.name.trim(),
         isPlatformAdmin: form.isPlatformAdmin,
+        platformRoleKey: form.isPlatformAdmin ? form.platformRoleKey : null,
         status: form.status,
         ...(form.password ? { password: form.password } : {}),
       });
@@ -454,6 +472,7 @@ async function onSave() {
         phone: form.phone,
         password: form.password,
         isPlatformAdmin: form.isPlatformAdmin,
+        ...(form.isPlatformAdmin ? { platformRoleKey: form.platformRoleKey } : {}),
         ...(!form.isPlatformAdmin && form.tenantId ? { tenantId: form.tenantId } : {}),
       });
       ElMessage.success('已创建');

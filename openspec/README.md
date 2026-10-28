@@ -9,6 +9,7 @@
 3. `openspec/changes/desktop-first-launch/`（当前要做：客户端第一次打开能登录）
 4. `openspec/changes/platform-admin-console/`（猛犸总后台 `/admin`）
 5. `openspec/changes/agent-runtime-ux-hardening/`（已落地交接；控制台 IA 见其中 `specs/enterprise-console/`）
+6. `openspec/changes/unify-ground-octop-rbac/`（进行中：猛犸权限打通 / ground 权威 + admin 真角色）
 
 ## 约定
 

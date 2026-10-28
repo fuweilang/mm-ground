@@ -1,6 +1,6 @@
 import { createRouter, createWebHistory } from 'vue-router';
 import { ElMessage } from 'element-plus';
-import { canAccessConsole } from '@mammoth/shared';
+import { canAccessAdmin, canAccessConsole } from '@mammoth/shared';
 import { useAuthStore } from '../stores/auth';
 
 const AGENT_HOME = '/agent/chat';
@@ -63,7 +63,7 @@ router.beforeEach(async (to) => {
 
   // 总后台只对平台管理员开放。智能体是独立应用，必须整页跳转。
   if (to.path.startsWith('/admin')) {
-    if (!session?.user.isPlatformAdmin) {
+    if (!canAccessAdmin(session)) {
       ElMessage.warning('无权访问总后台');
       window.location.href = AGENT_HOME;
       return false;

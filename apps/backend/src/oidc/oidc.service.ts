@@ -6,6 +6,7 @@ import { SignJWT, createLocalJWKSet, jwtVerify } from 'jose';
 import type { JWK, JWTPayload } from 'jose';
 import { User } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
+import { computeEffectivePermissions } from '../permissions/effective';
 import { loadOidcKeys, OIDC_KID } from './oidc.keys';
 import { saveCode, takeCode } from './oidc.store';
 
@@ -161,13 +162,19 @@ export class OidcService implements OnModuleInit {
     if (!user || user.status !== 'active') throw new UnauthorizedException('invalid_grant');
 
     const now = Math.floor(Date.now() / 1000);
+    const eff = await computeEffectivePermissions(this.prisma, user.id, row.tenantId ?? null);
+    const isPlatformAdmin = eff.isPlatformAdmin || user.isPlatformAdmin;
     const idToken = await new SignJWT({
       nonce: row.nonce,
       name: user.name,
       preferred_username: user.phone,
       phone_number: user.phone,
       email: user.email ?? undefined,
-      is_platform_admin: user.isPlatformAdmin,
+      is_platform_admin: isPlatformAdmin,
+      platform_role: eff.platformRoleKey,
+      tenant_id: row.tenantId ?? null,
+      // Full list also on userinfo; include here while catalog stays small (~43 keys).
+      permissions: eff.effectivePermissions,
     })
       .setProtectedHeader({ alg: 'RS256', kid: OIDC_KID })
       .setIssuer(row.issuer || this.issuer(req))
@@ -191,17 +198,22 @@ export class OidcService implements OnModuleInit {
     };
   }
 
-  async userinfo(sub: string) {
+  async userinfo(sub: string, tenantId: string | null = null) {
     const user = await this.prisma.user.findUnique({ where: { id: sub } });
     // 被停用者 5 分钟 token 窗口内不应还能取 userinfo（与 userFromCookie/JwtGuard 的检查对齐）。
     if (!user || user.status !== 'active') throw new UnauthorizedException('invalid_token');
+    const eff = await computeEffectivePermissions(this.prisma, user.id, tenantId);
+    const isPlatformAdmin = eff.isPlatformAdmin || user.isPlatformAdmin;
     return {
       sub: user.id,
       name: user.name,
       preferred_username: user.phone,
       phone_number: user.phone,
       email: user.email ?? undefined,
-      is_platform_admin: user.isPlatformAdmin,
+      is_platform_admin: isPlatformAdmin,
+      platform_role: eff.platformRoleKey,
+      tenant_id: tenantId,
+      permissions: eff.effectivePermissions,
     };
   }
 }

@@ -19,6 +19,11 @@ enum MemberRole {
   MEMBER
 }
 
+enum RoleScope {
+  PLATFORM
+  ORG_PRESET
+}
+
 enum AccessScope {
   ALL
   SELECTED
@@ -44,6 +49,7 @@ model User {
   memberships      OrgMember[]
   agentGrants      AgentGrant[]
   kbGrants         KbGrant[]
+  platformRole     UserPlatformRole?
 
   @@map("user")
 }
@@ -228,3 +234,46 @@ model Quota {
 
   @@map("quota")
 }
+
+model Role {
+  id          String           @id @default(cuid())
+  key         String           @unique
+  name        String
+  description String?
+  scope       RoleScope
+  builtIn     Boolean          @default(true) @map("built_in")
+  editable    Boolean          @default(false)
+  createdAt   DateTime         @default(now()) @map("created_at")
+  updatedAt   DateTime         @updatedAt @map("updated_at")
+  permissions RolePermission[]
+  platformUsers UserPlatformRole[]
+
+  @@index([scope])
+  @@map("role")
+}
+
+model RolePermission {
+  id        String   @id @default(cuid())
+  roleId    String   @map("role_id")
+  permKey   String   @map("perm_key")
+  role      Role     @relation(fields: [roleId], references: [id], onDelete: Cascade)
+  createdAt DateTime @default(now()) @map("created_at")
+
+  @@unique([roleId, permKey])
+  @@index([permKey])
+  @@map("role_permission")
+}
+
+model UserPlatformRole {
+  id        String   @id @default(cuid())
+  userId    String   @unique @map("user_id")
+  roleId    String   @map("role_id")
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  role      Role     @relation(fields: [roleId], references: [id], onDelete: Restrict)
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  @@index([roleId])
+  @@map("user_platform_role")
+}
+

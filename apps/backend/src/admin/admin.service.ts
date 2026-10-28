@@ -13,6 +13,10 @@ import { UpdateAdminUserDto } from './dto/update-admin-user.dto';
 import { ListAdminUsersDto } from './dto/list-admin-users.dto';
 import { CreateAdminEnterpriseDto } from './dto/create-admin-enterprise.dto';
 import { UpdateAdminEnterpriseDto } from './dto/update-admin-enterprise.dto';
+import { ALL_PERMISSION_KEYS, validatePermissionKeys } from '../permissions/catalog';
+import { computeEffectivePermissions } from '../permissions/effective';
+import { ListAdminRolesDto } from './dto/list-admin-roles.dto';
+import { UpdateAdminRoleDto } from './dto/update-admin-role.dto';
 
 const userSelect = {
   id: true,
@@ -25,6 +29,9 @@ const userSelect = {
   memberships: {
     select: { role: true, tenant: { select: { id: true, name: true } } },
     orderBy: { createdAt: 'asc' },
+  },
+  platformRole: {
+    select: { role: { select: { key: true, name: true } } },
   },
 } satisfies Prisma.UserSelect;
 
@@ -49,13 +56,20 @@ export class AdminService {
     if (!actor.isPlatformAdmin) throw new ForbiddenException('仅平台管理员可访问总后台');
   }
 
+  /** Public wrapper for other admin controllers (catalog etc.). */
+  requirePlatformAdminPublic(actor: User) {
+    this.requirePlatformAdmin(actor);
+  }
+
   private presentUser(user: UserRow) {
+    const platformRoleKey = user.platformRole?.role.key ?? null;
     return {
       id: user.id,
       name: user.name,
       phone: user.phone,
       email: user.email,
-      isPlatformAdmin: user.isPlatformAdmin,
+      isPlatformAdmin: user.isPlatformAdmin || platformRoleKey != null,
+      platformRoleKey,
       status: user.status,
       createdAt: user.createdAt,
       tenants: user.memberships.map((m) => ({ id: m.tenant.id, name: m.tenant.name, role: m.role })),
@@ -84,6 +98,41 @@ export class AdminService {
     const tenant = await this.prisma.tenant.findUnique({ where: { id }, select: enterpriseSelect });
     if (!tenant) throw new NotFoundException('企业不存在');
     return this.presentEnterprise(tenant);
+  }
+
+  /**
+   * Bind a built-in platform role. New platform admins default to platform_admin.
+   * Pass roleKey=null to clear. Keeps isPlatformAdmin in sync as cache.
+   */
+  async bindPlatformRole(
+    tx: Prisma.TransactionClient,
+    userId: string,
+    roleKey: 'super_admin' | 'platform_admin' | null,
+  ) {
+    if (!roleKey) {
+      await tx.userPlatformRole.deleteMany({ where: { userId } });
+      await tx.user.update({ where: { id: userId }, data: { isPlatformAdmin: false } });
+      return;
+    }
+    const role = await tx.role.findUnique({ where: { key: roleKey } });
+    if (!role || role.scope !== 'PLATFORM') {
+      throw new BadRequestException(`平台角色不存在: ${roleKey}`);
+    }
+    await tx.userPlatformRole.upsert({
+      where: { userId },
+      update: { roleId: role.id },
+      create: { userId, roleId: role.id },
+    });
+    await tx.user.update({ where: { id: userId }, data: { isPlatformAdmin: true } });
+  }
+
+  /** Validate perm keys against catalog; throws BadRequestException on unknown. */
+  assertKnownPermissionKeys(keys: string[]) {
+    try {
+      return validatePermissionKeys(keys);
+    } catch (e) {
+      throw new BadRequestException((e as Error).message);
+    }
   }
 
   async listUsers(actor: User, query: ListAdminUsersDto) {
@@ -133,6 +182,10 @@ export class AdminService {
           isPlatformAdmin: dto.isPlatformAdmin,
         },
       });
+      if (dto.isPlatformAdmin) {
+        const roleKey = dto.platformRoleKey ?? 'platform_admin';
+        await this.bindPlatformRole(tx, created.id, roleKey);
+      }
       if (tenantId) {
         await tx.orgMember.create({
           data: { userId: created.id, tenantId, role: MemberRole.MEMBER },
@@ -178,9 +231,30 @@ export class AdminService {
     if (dto.status !== undefined) data.status = dto.status;
     if (dto.password) data.passwordHash = await bcrypt.hash(dto.password, 10);
 
-    if (Object.keys(data).length > 0) {
-      await this.prisma.user.update({ where: { id }, data });
+    // platformRoleKey=null clears; explicit key binds; isPlatformAdmin true defaults platform_admin
+    const clearPlatform =
+      dto.platformRoleKey === null
+      || dto.isPlatformAdmin === false;
+    const bindKey: 'super_admin' | 'platform_admin' | undefined =
+      dto.platformRoleKey === 'super_admin' || dto.platformRoleKey === 'platform_admin'
+        ? dto.platformRoleKey
+        : dto.isPlatformAdmin === true && !existing.isPlatformAdmin
+          ? 'platform_admin'
+          : undefined;
+    if (actor.id === id && clearPlatform) {
+      throw new BadRequestException('不能取消自己的平台管理员身份');
     }
+
+    await this.prisma.$transaction(async (tx) => {
+      if (Object.keys(data).length > 0) {
+        await tx.user.update({ where: { id }, data });
+      }
+      if (clearPlatform && existing.isPlatformAdmin) {
+        await this.bindPlatformRole(tx, id, null);
+      } else if (bindKey) {
+        await this.bindPlatformRole(tx, id, bindKey);
+      }
+    });
     await this.prisma.auditLog.create({
       data: { userId: actor.id, action: 'admin_update_user', meta: { targetUserId: id } },
     });
@@ -334,6 +408,142 @@ export class AdminService {
       },
     });
     return { ok: true };
+  }
+
+
+  private async actorHasRolesWrite(actor: User) {
+    const eff = await computeEffectivePermissions(this.prisma, actor.id, null);
+    if (eff.effectivePermissions.includes('portal.admin.roles.write')) return true;
+    // Fallback: legacy super flag without role row yet
+    return actor.isPlatformAdmin && eff.platformRoleKey === 'super_admin';
+  }
+
+  private presentRole(role: {
+    id: string;
+    key: string;
+    name: string;
+    description: string | null;
+    scope: string;
+    builtIn: boolean;
+    editable: boolean;
+    permissions: Array<{ permKey: string }>;
+    _count?: { platformUsers: number };
+  }) {
+    const permissions = role.permissions.map((p) => p.permKey).sort();
+    return {
+      id: role.id,
+      key: role.key,
+      name: role.name,
+      description: role.description,
+      scope: role.scope,
+      builtIn: role.builtIn,
+      editable: role.editable,
+      permissionsLocked: role.key === 'super_admin',
+      permissions,
+      userCount: role._count?.platformUsers ?? 0,
+    };
+  }
+
+  async listRoles(actor: User, query: ListAdminRolesDto) {
+    this.requirePlatformAdmin(actor);
+    const where: Prisma.RoleWhereInput = {};
+    if (query.keyword?.trim()) {
+      const keyword = query.keyword.trim();
+      where.OR = [
+        { name: { contains: keyword, mode: 'insensitive' } },
+        { key: { contains: keyword, mode: 'insensitive' } },
+      ];
+    }
+    const roles = await this.prisma.role.findMany({
+      where,
+      include: {
+        permissions: { select: { permKey: true } },
+        _count: { select: { platformUsers: true } },
+      },
+      orderBy: [{ scope: 'asc' }, { key: 'asc' }],
+    });
+    return roles.map((r) => this.presentRole(r));
+  }
+
+  async getRole(actor: User, id: string) {
+    this.requirePlatformAdmin(actor);
+    const role = await this.prisma.role.findUnique({
+      where: { id },
+      include: {
+        permissions: { select: { permKey: true } },
+        _count: { select: { platformUsers: true } },
+      },
+    });
+    if (!role) throw new NotFoundException('角色不存在');
+    return this.presentRole(role);
+  }
+
+  async updateRole(actor: User, id: string, dto: UpdateAdminRoleDto) {
+    this.requirePlatformAdmin(actor);
+    if (!(await this.actorHasRolesWrite(actor))) {
+      throw new ForbiddenException('无角色编辑权限');
+    }
+    const role = await this.prisma.role.findUnique({
+      where: { id },
+      include: { permissions: { select: { id: true, permKey: true } } },
+    });
+    if (!role) throw new NotFoundException('角色不存在');
+    if (role.scope !== 'PLATFORM') {
+      throw new ForbiddenException('一期仅可编辑平台角色');
+    }
+    if (!role.editable && role.key !== 'super_admin') {
+      throw new ForbiddenException('该角色不可编辑');
+    }
+
+    const data: Prisma.RoleUpdateInput = {};
+    if (dto.name !== undefined) data.name = dto.name.trim();
+    if (dto.description !== undefined) {
+      data.description = dto.description === null ? null : dto.description.trim();
+    }
+
+    if (dto.permissions !== undefined) {
+      if (role.key === 'super_admin') {
+        // Locked full catalog — ignore client list, keep all keys
+        const want = [...ALL_PERMISSION_KEYS].sort();
+        await this.replaceRolePermissions(role.id, want);
+      } else {
+        const keys = this.assertKnownPermissionKeys(dto.permissions);
+        await this.replaceRolePermissions(role.id, keys);
+      }
+    }
+
+    if (Object.keys(data).length > 0) {
+      await this.prisma.role.update({ where: { id }, data });
+    }
+
+    await this.prisma.auditLog.create({
+      data: {
+        userId: actor.id,
+        action: 'admin_update_role',
+        meta: { roleId: id, key: role.key },
+      },
+    });
+    return this.getRole(actor, id);
+  }
+
+  private async replaceRolePermissions(roleId: string, keys: string[]) {
+    const existing = await this.prisma.rolePermission.findMany({
+      where: { roleId },
+      select: { id: true, permKey: true },
+    });
+    const want = new Set(keys);
+    const have = new Set(existing.map((e) => e.permKey));
+    const toDelete = existing.filter((e) => !want.has(e.permKey)).map((e) => e.id);
+    if (toDelete.length) {
+      await this.prisma.rolePermission.deleteMany({ where: { id: { in: toDelete } } });
+    }
+    const toAdd = keys.filter((k) => !have.has(k));
+    if (toAdd.length) {
+      await this.prisma.rolePermission.createMany({
+        data: toAdd.map((permKey) => ({ roleId, permKey })),
+        skipDuplicates: true,
+      });
+    }
   }
 
   private hasEnterpriseBusinessData(tenant: {

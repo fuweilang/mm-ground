@@ -1,10 +1,16 @@
-import { AccessScope, KbStatus, PrismaClient, TenantType, MemberRole } from '@prisma/client';
+import { AccessScope, KbStatus, PrismaClient, TenantType, MemberRole, RoleScope } from '@prisma/client';
 import * as bcrypt from 'bcryptjs';
 import { writeFile, mkdir } from 'fs/promises';
 import { dirname, join } from 'path';
 import { DEFAULT_AGENT_PERSONA, LEGAL_AGENT_PERSONA } from '../src/agent/personas';
 import { chunkText, embedText, vectorLiteral } from '../src/knowledge/index-text';
 import { uploadRoot } from '../src/knowledge/storage';
+import {
+  BUILTIN_ROLE_KEYS,
+  ROLE_META,
+  ROLE_PERMISSION_PACKS,
+  type BuiltinRoleKey,
+} from '../src/permissions/catalog';
 
 const prisma = new PrismaClient();
 const PASSWORD = '12345678';
@@ -18,7 +24,64 @@ async function upsertUser(phone: string, name: string, isPlatformAdmin = false) 
   });
 }
 
+
+async function ensureBuiltinRoles() {
+  for (const key of BUILTIN_ROLE_KEYS) {
+    const meta = ROLE_META[key];
+    const role = await prisma.role.upsert({
+      where: { key },
+      update: {
+        name: meta.name,
+        description: meta.description,
+        scope: meta.scope as RoleScope,
+        builtIn: true,
+        editable: meta.editable,
+      },
+      create: {
+        key,
+        name: meta.name,
+        description: meta.description,
+        scope: meta.scope as RoleScope,
+        builtIn: true,
+        editable: meta.editable,
+      },
+    });
+    const pack = ROLE_PERMISSION_PACKS[key as BuiltinRoleKey];
+    const existing = await prisma.rolePermission.findMany({
+      where: { roleId: role.id },
+      select: { id: true, permKey: true },
+    });
+    const want = new Set(pack);
+    const have = new Set(existing.map((e) => e.permKey));
+    const toDelete = existing.filter((e) => !want.has(e.permKey)).map((e) => e.id);
+    if (toDelete.length) {
+      await prisma.rolePermission.deleteMany({ where: { id: { in: toDelete } } });
+    }
+    const toAdd = pack.filter((k) => !have.has(k));
+    if (toAdd.length) {
+      await prisma.rolePermission.createMany({
+        data: toAdd.map((permKey) => ({ roleId: role.id, permKey })),
+        skipDuplicates: true,
+      });
+    }
+  }
+  console.log('roles seeded:', BUILTIN_ROLE_KEYS.join(', '));
+}
+
+async function ensurePlatformRole(userId: string, roleKey: BuiltinRoleKey) {
+  const role = await prisma.role.findUnique({ where: { key: roleKey } });
+  if (!role) throw new Error(`missing role ${roleKey}`);
+  await prisma.userPlatformRole.upsert({
+    where: { userId },
+    update: { roleId: role.id },
+    create: { userId, roleId: role.id },
+  });
+  await prisma.user.update({ where: { id: userId }, data: { isPlatformAdmin: true } });
+}
+
 async function main() {
+  await ensureBuiltinRoles();
+
   const platform = await prisma.tenant.upsert({
     where: { slug: 'platform' },
     update: {},
@@ -47,6 +110,7 @@ async function main() {
   });
 
   const admin = await upsertUser('13800000001', '平台超管', true);
+  await ensurePlatformRole(admin.id, 'super_admin');
   const agencyUser = await upsertUser('13800000002', '代理商管理员');
   const owner = await upsertUser('13800000004', '企业管理员');
   const demoUser = await upsertUser('13800000003', '企业员工');
