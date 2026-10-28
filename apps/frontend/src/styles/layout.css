@@ -62,20 +62,74 @@ body,
   overflow: hidden;
 }
 
-.brand {
+.brand-row {
   align-items: center;
   border-bottom: 1px solid #dfe5ef;
+  display: flex;
+  flex: 0 0 50px;
+  gap: 4px;
+  height: 50px;
+  padding-right: 10px;
+}
+
+.brand {
+  align-items: center;
   color: var(--app-primary-color);
   cursor: pointer;
   display: flex;
-  flex: 0 0 50px;
+  flex: 1 1 auto;
   height: 50px;
   font-size: 22px;
   font-weight: 800;
+  min-width: 0;
   overflow: hidden;
   padding: 0 14px;
   text-decoration: none;
   white-space: nowrap;
+}
+
+/* 品牌旁的产品切换器：icon-only，与 Agent 侧保持同一形态 */
+.product-switch {
+  align-items: center;
+  background: transparent;
+  border: 1px solid transparent;
+  border-radius: 6px;
+  color: #98a2b3;
+  cursor: pointer;
+  display: inline-flex;
+  flex: 0 0 auto;
+  gap: 1px;
+  height: 26px;
+  justify-content: center;
+  padding: 0 3px;
+  transition: background-color 0.18s ease, border-color 0.18s ease, color 0.18s ease;
+}
+
+.product-switch:hover {
+  background: #f0f4ff;
+  border-color: #dfe5ef;
+  color: var(--app-primary-color);
+}
+
+.product-switch-icon {
+  height: 14px;
+  width: 14px;
+}
+
+.product-switch-caret {
+  height: 12px;
+  width: 12px;
+}
+
+.product-switch-menu .el-dropdown-menu__item {
+  font-size: 14px;
+  height: 40px;
+  padding: 0 16px;
+}
+
+.product-switch-menu .product-switch-current {
+  color: var(--app-primary-color);
+  font-weight: 600;
 }
 
 .brand-logo {
@@ -172,46 +226,77 @@ body,
 }
 
 .sidebar-footer {
+  border-top: 1px solid #dfe5ef;
   flex-shrink: 0;
   margin-top: auto;
+  padding: 8px 10px 10px;
 }
 
+.sidebar-footer-row {
+  align-items: center;
+  display: flex;
+  gap: 8px;
+}
+
+/* ghost 胶囊：次级色 + ↗，hover 才升主色，不再复用 nav 项形态 */
 .chat-jump {
   align-items: center;
-  border-top: 1px solid #dfe5ef;
+  border: 1px solid #dfe5ef;
+  border-radius: 999px;
   color: #667085;
-  display: flex;
-  gap: 10px;
-  height: 44px;
-  padding: 0 18px;
+  display: inline-flex;
+  flex: 1 1 auto;
+  gap: 6px;
+  height: 30px;
+  min-width: 0;
+  padding: 0 12px;
   text-decoration: none;
-  transition: background-color 0.18s ease, color 0.18s ease;
+  transition: background-color 0.18s ease, border-color 0.18s ease, color 0.18s ease;
   white-space: nowrap;
-  width: 100%;
 }
 
 .chat-jump:hover {
-  background: #f0f4ff;
+  background: #f5f8ff;
+  border-color: #c9d8f5;
   color: var(--app-primary-color);
+}
+
+.chat-jump-icon {
+  flex: 0 0 16px;
+  height: 16px;
+  stroke-width: 1.9;
+  width: 16px;
+}
+
+.chat-jump-label {
+  font-size: 13px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.chat-jump-arrow {
+  flex: 0 0 12px;
+  height: 12px;
+  opacity: 0.65;
+  width: 12px;
 }
 
 .sidebar-collapse {
   align-items: center;
-  background: #ffffff;
+  background: transparent;
   border: 0;
-  border-top: 1px solid #dfe5ef;
+  border-radius: 6px;
   color: #667085;
   cursor: pointer;
   display: inline-flex;
-  flex: 0 0 44px;
-  height: 44px;
+  flex: 0 0 28px;
+  height: 28px;
   justify-content: center;
   padding: 0;
-  width: 100%;
 }
 
 .sidebar-collapse:hover {
-  background: #edf3ff;
+  background: #f0f4ff;
   color: var(--app-primary-color);
 }
 
@@ -223,9 +308,19 @@ body,
   width: 18px;
 }
 
+.sidebar-collapsed .brand-row {
+  justify-content: center;
+  padding-right: 0;
+}
+
 .sidebar-collapsed .brand {
+  flex: 0 0 auto;
   justify-content: center;
   padding: 0;
+}
+
+.sidebar-collapsed .product-switch {
+  display: none;
 }
 
 .sidebar-collapsed .brand-logo-rest {
@@ -238,11 +333,38 @@ body,
   width: 0;
 }
 
-.sidebar-collapsed .sidebar-nav a,
-.sidebar-collapsed .chat-jump {
+.sidebar-collapsed .sidebar-nav a {
   gap: 0;
   justify-content: center;
   padding: 10px 0;
+}
+
+.sidebar-collapsed .sidebar-footer {
+  padding: 8px 0 10px;
+}
+
+.sidebar-collapsed .sidebar-footer-row {
+  flex-direction: column;
+  gap: 2px;
+}
+
+.sidebar-collapsed .chat-jump {
+  border-radius: 6px;
+  flex: 0 0 28px;
+  justify-content: center;
+  padding: 0;
+  width: 28px;
+}
+
+.sidebar-collapsed .sidebar-collapse {
+  flex: 0 0 28px;
+  height: 28px;
+  width: 28px;
+}
+
+.sidebar-collapsed .chat-jump-label,
+.sidebar-collapsed .chat-jump-arrow {
+  display: none;
 }
 
 .sidebar-collapsed .collapse-icon {
@@ -315,18 +437,52 @@ body,
 .user-avatar {
   align-items: center;
   background: var(--app-primary-color);
-  border-radius: 50%;
+  border-radius: 10px;
   color: #ffffff;
   display: inline-flex;
   font-size: 14px;
   font-weight: 700;
-  height: 30px;
+  height: 32px;
   justify-content: center;
-  width: 30px;
+  width: 32px;
 }
 
 .username {
+  font-size: 13px;
+  font-weight: 600;
+}
+
+/* 与 Agent 侧用户菜单对齐：40px 行高、16px 图标、只读身份块 */
+.user-dropdown .el-dropdown-menu__item {
+  align-items: center;
+  display: flex;
   font-size: 14px;
+  gap: 10px;
+  height: 40px;
+  padding: 0 16px;
+}
+
+.user-dropdown .el-dropdown-menu__item.is-disabled {
+  cursor: default;
+  opacity: 1;
+}
+
+.user-menu-identity {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  line-height: 1.35;
+}
+
+.user-menu-name {
+  color: #333946;
+  font-size: 15px;
+  font-weight: 700;
+}
+
+.user-menu-tenant {
+  color: #98a2b3;
+  font-size: 12px;
 }
 
 .dropdown-icon {
