@@ -192,8 +192,25 @@ export class AuthService {
     const user = await this.prisma.user.findUnique({ where: { id: payload.sub } });
     if (!user || user.status !== 'active') throw new UnauthorizedException('账号不可用');
     this.usedBrowserSsoJti.add(payload.jti);
-    this.setCookie(res, { sub: user.id, tenantId: payload.tenantId ?? null });
-    return this.me(user, payload.tenantId ?? null);
+    const tenantId = await this.resolveSsoTenant(user, payload.tenantId ?? null);
+    this.setCookie(res, { sub: user.id, tenantId });
+    return this.me(user, tenantId);
+  }
+
+  /**
+   * 从 Octop 桌面端带过来的 handoff 票据常常不带企业上下文（后端用 Bearer 换票，没有
+   * cookie），若直接沿用票据里的 tenantId，企业用户会落到 currentTenant = null，被
+   * /console 路由守卫弹回 /agent/chat。这里与 login() 对齐：平台管理员留空进 /admin，
+   * 其余用户回落到自己第一个可用企业。
+   */
+  private async resolveSsoTenant(user: User, tenantId: string | null): Promise<string | null> {
+    if (!tenantId && user.isPlatformAdmin) return null;
+    const tenants = await this.listTenants(user);
+    if (tenantId && tenants.some((t) => t.id === tenantId && t.status === 'active')) {
+      return tenantId;
+    }
+    if (user.isPlatformAdmin) return null;
+    return tenants.find((t) => t.status === 'active')?.id ?? null;
   }
 
   /** 平台管理员退出代运营：清掉当前企业上下文，回到「没有企业」的平台身份。 */
