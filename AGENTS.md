@@ -55,3 +55,4 @@ i18n：有的 key 已叫 `common.copyErrorFor猛犸AI` 等，`t()` 必须对得�
 - 定制小 diff，方便 rebase
 - 检索/会话必须带 `tenant_id`（KB 做的时候）
 - 客户本机文件：只通过客户端工作区；首次写盘说清范围，禁止默认扫全盘
+- 版本号唯一来源 `config/version.json`：发版只跑 `pnpm version:bump`，禁止在 `.env`、Dockerfile、前端里硬编码版本；显示版本统一读 `GET /api/version`（console 与 agent 各一份，数据同源）

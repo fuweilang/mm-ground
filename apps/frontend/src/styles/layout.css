@@ -238,6 +238,17 @@ body,
   gap: 8px;
 }
 
+/* 版本号角标：与 /agent 侧同一来源，避免发版后各页面版本不一致 */
+.sidebar-version {
+  color: #98a2b3;
+  display: block;
+  font-size: 11px;
+  line-height: 1.6;
+  margin-top: 6px;
+  text-align: center;
+  user-select: none;
+}
+
 /* ghost 胶囊：次级色 + ↗，hover 才升主色，不再复用 nav 项形态 */
 .chat-jump {
   align-items: center;
@@ -341,6 +352,11 @@ body,
 
 .sidebar-collapsed .sidebar-footer {
   padding: 8px 0 10px;
+}
+
+/* 折叠态宽度只够图标，版本号让位给操作按钮 */
+.sidebar-collapsed .sidebar-version {
+  display: none;
 }
 
 .sidebar-collapsed .sidebar-footer-row {

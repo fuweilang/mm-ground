@@ -22,7 +22,9 @@
     "db:down": "docker compose -f infra/docker-compose.yml down",
     "db:migrate": "pnpm --filter @mammoth/backend prisma:migrate",
     "db:seed": "pnpm --filter @mammoth/backend prisma:seed",
-    "version:sync": "node scripts/sync-mammoth-version.mjs"
+    "version:sync": "node scripts/sync-mammoth-version.mjs",
+    "version:bump": "node scripts/bump-version.mjs",
+    "version:check": "node scripts/check-version.mjs"
   },
   "devDependencies": {
     "concurrently": "^9.1.2",
