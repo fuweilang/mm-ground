@@ -2,7 +2,7 @@
   <main class="app-shell" :class="{ 'sidebar-collapsed': isSidebarCollapsed }">
     <aside class="sidebar">
       <div class="brand-row">
-        <RouterLink class="brand" :to="homePath" title="猛犸中台">
+        <RouterLink class="brand" :to="homePath" :title="appVersion ? `猛犸中台 · v${appVersion}` : '猛犸中台'">
           <span class="brand-logo">
             <img class="brand-logo-mark" src="/logo-icon.png" alt="猛犸中台" />
             <span class="brand-logo-rest">猛犸中台</span>
@@ -44,24 +44,20 @@
       </nav>
 
       <div class="sidebar-footer">
-        <div class="sidebar-footer-row">
-          <a class="chat-jump" href="/agent/chat" title="猛犸智能体">
-            <MessageSquare class="chat-jump-icon" />
-            <span class="chat-jump-label">猛犸智能体</span>
-            <ArrowUpRight class="chat-jump-arrow" />
-          </a>
-          <button
-            class="sidebar-collapse"
-            type="button"
-            :title="isSidebarCollapsed ? '展开侧边栏' : '折叠侧边栏'"
-            @click="isSidebarCollapsed = !isSidebarCollapsed"
-          >
-            <ChevronLeft class="collapse-icon" />
-          </button>
-        </div>
-        <span v-if="appVersion" class="sidebar-version" :title="`版本 v${appVersion}`">
-          v{{ appVersion }}
-        </span>
+        <a class="chat-jump" href="/agent/chat" target="_blank" rel="noopener noreferrer" title="猛犸智能体 · 新标签页打开">
+          <MessageSquare class="chat-jump-icon" />
+          <span class="chat-jump-label">猛犸智能体</span>
+          <ArrowUpRight class="chat-jump-arrow" />
+        </a>
+        <button
+          class="sidebar-collapse"
+          type="button"
+          :title="isSidebarCollapsed ? '展开侧边栏' : '收起侧边栏'"
+          @click="isSidebarCollapsed = !isSidebarCollapsed"
+        >
+          <ChevronLeft class="collapse-icon" />
+          <span class="collapse-label">{{ isSidebarCollapsed ? '展开' : '收起' }}</span>
+        </button>
       </div>
     </aside>
 

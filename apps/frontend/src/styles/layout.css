@@ -232,44 +232,28 @@ body,
   padding: 8px 10px 10px;
 }
 
-.sidebar-footer-row {
-  align-items: center;
-  display: flex;
-  gap: 8px;
-}
-
-/* 版本号角标：与 /agent 侧同一来源，避免发版后各页面版本不一致 */
-.sidebar-version {
-  color: #98a2b3;
-  display: block;
-  font-size: 11px;
-  line-height: 1.6;
-  margin-top: 6px;
-  text-align: center;
-  user-select: none;
-}
-
-/* ghost 胶囊：次级色 + ↗，hover 才升主色，不再复用 nav 项形态 */
+/* 实心主色胶囊：全局唯一主出口，hover 加深；按甜甜规范 #2563eb/#1d4ed8 */
 .chat-jump {
   align-items: center;
-  border: 1px solid #dfe5ef;
+  background: var(--app-primary-color);
+  border: 1px solid var(--app-primary-color);
   border-radius: 999px;
-  color: #667085;
-  display: inline-flex;
-  flex: 1 1 auto;
+  box-sizing: border-box;
+  color: #ffffff;
+  display: flex;
   gap: 6px;
   height: 30px;
   min-width: 0;
   padding: 0 12px;
   text-decoration: none;
-  transition: background-color 0.18s ease, border-color 0.18s ease, color 0.18s ease;
+  transition: background-color 0.18s ease, border-color 0.18s ease;
   white-space: nowrap;
+  width: 100%;
 }
 
 .chat-jump:hover {
-  background: #f5f8ff;
-  border-color: #c9d8f5;
-  color: var(--app-primary-color);
+  background: var(--app-primary-hover-color);
+  border-color: var(--app-primary-hover-color);
 }
 
 .chat-jump-icon {
@@ -288,27 +272,38 @@ body,
 .chat-jump-arrow {
   flex: 0 0 12px;
   height: 12px;
-  opacity: 0.65;
+  opacity: 0.9;
   width: 12px;
 }
 
+/* 通宽「收起」按钮：独立成行，文字明示，替代旧版小图标 */
 .sidebar-collapse {
   align-items: center;
   background: transparent;
-  border: 0;
-  border-radius: 6px;
+  border: 1px solid #dfe5ef;
+  border-radius: 8px;
+  box-sizing: border-box;
   color: #667085;
   cursor: pointer;
-  display: inline-flex;
-  flex: 0 0 28px;
-  height: 28px;
+  display: flex;
+  gap: 6px;
+  height: 32px;
   justify-content: center;
-  padding: 0;
+  margin-top: 8px;
+  padding: 0 12px;
+  transition: background-color 0.18s ease, border-color 0.18s ease, color 0.18s ease;
+  width: 100%;
 }
 
 .sidebar-collapse:hover {
   background: #f0f4ff;
+  border-color: #c9d8f5;
   color: var(--app-primary-color);
+}
+
+.collapse-label {
+  font-size: 13px;
+  line-height: 1;
 }
 
 .collapse-icon {
@@ -351,17 +346,10 @@ body,
 }
 
 .sidebar-collapsed .sidebar-footer {
-  padding: 8px 0 10px;
-}
-
-/* 折叠态宽度只够图标，版本号让位给操作按钮 */
-.sidebar-collapsed .sidebar-version {
-  display: none;
-}
-
-.sidebar-collapsed .sidebar-footer-row {
+  align-items: center;
+  display: flex;
   flex-direction: column;
-  gap: 2px;
+  padding: 8px 0 10px;
 }
 
 .sidebar-collapsed .chat-jump {
@@ -372,10 +360,18 @@ body,
   width: 28px;
 }
 
+/* 折叠态只够图标，收起按钮退化为居中图标 */
 .sidebar-collapsed .sidebar-collapse {
+  border: 0;
   flex: 0 0 28px;
   height: 28px;
+  margin-top: 6px;
+  padding: 0;
   width: 28px;
+}
+
+.sidebar-collapsed .collapse-label {
+  display: none;
 }
 
 .sidebar-collapsed .chat-jump-label,
