@@ -11,6 +11,7 @@ import { AuditModule } from './audit/audit.module';
 import { EnterpriseModule } from './enterprise/enterprise.module';
 import { AdminModule } from './admin/admin.module';
 import { HealthController } from './health.controller';
+import { VersionController } from './version.controller';
 import { RequestLoggingMiddleware } from './request-logging.middleware';
 
 @Module({
@@ -27,7 +28,7 @@ import { RequestLoggingMiddleware } from './request-logging.middleware';
     EnterpriseModule,
     AdminModule,
   ],
-  controllers: [HealthController],
+  controllers: [HealthController, VersionController],
 })
 export class AppModule implements NestModule {
   configure(consumer: MiddlewareConsumer): void {

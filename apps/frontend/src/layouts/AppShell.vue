@@ -59,6 +59,9 @@
             <ChevronLeft class="collapse-icon" />
           </button>
         </div>
+        <span v-if="appVersion" class="sidebar-version" :title="`版本 v${appVersion}`">
+          v{{ appVersion }}
+        </span>
       </div>
     </aside>
 
@@ -114,7 +117,7 @@
 </template>
 
 <script setup lang="ts">
-import { computed } from 'vue';
+import { computed, onMounted, ref } from 'vue';
 import { RouterLink, useRoute, useRouter } from 'vue-router';
 import {
   ArrowUpRight,
@@ -138,6 +141,7 @@ import { useAuthStore } from '../stores/auth';
 import { openClientDownload } from '../stores/clientDownload';
 import { clearOctopSession } from '../utils/session';
 import { useResponsiveSidebar } from './useResponsiveSidebar';
+import { fetchAppVersion } from '../api/version';
 import WorkbenchBanner from './WorkbenchBanner.vue';
 import ClientDownloadLink from '../components/ClientDownloadLink.vue';
 import TenantSwitcher from '../components/TenantSwitcher.vue';
@@ -148,6 +152,16 @@ const router = useRouter();
 const auth = useAuthStore();
 const { isSidebarCollapsed } = useResponsiveSidebar();
 const session = computed(() => auth.session);
+
+/** 版本号只读 /console/api/version（同源于 config/version.json）。 */
+const appVersion = ref('');
+onMounted(async () => {
+  try {
+    appVersion.value = (await fetchAppVersion()).version;
+  } catch {
+    // 版本号是装饰信息，取不到就留空，不打断页面。
+  }
+});
 
 const pageTitle = computed(() => (typeof route.meta.title === 'string' ? route.meta.title : '工作台'));
 const avatar = computed(() => (session.value?.user.name || '猛').slice(0, 1));
