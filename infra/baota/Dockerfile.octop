@@ -1,4 +1,32 @@
 # 精简 Octop：网页发布用。不含 OCR / 本地向量 / Playwright 浏览器。
+#
+# 阶段 1：构建 dashboard（React/Vite）。产物落 /build/src/octop/dashboard，
+# 由阶段 2 COPY 进镜像的 src/octop/dashboard，Octop 才挂 SPA（/agent/chat）。
+# 早期版本漏了这个阶段，产物只能靠本地手搓 dist 再 rsync，--delete 一并删掉后
+# 就会重现"后端健康、/agent/chat 404"。现在镜像自包含，不再依赖宿主 dist。
+FROM node:20-slim AS frontend-builder
+
+ARG NPM_REGISTRY=https://mirrors.cloud.tencent.com/npm/
+ARG NODE_MAX_OLD_SPACE_SIZE=2048
+ARG PNPM_VERSION=10
+WORKDIR /build/dashboard
+
+COPY dashboard/package.json dashboard/pnpm-lock.yaml dashboard/.npmrc ./
+RUN --mount=type=cache,target=/root/.cache/pnpm,sharing=locked \
+    set -eu; \
+    npm config set registry "$NPM_REGISTRY"; \
+    npm install -g "pnpm@${PNPM_VERSION}" --no-audit --no-fund; \
+    pnpm config set registry "$NPM_REGISTRY"; \
+    pnpm install --frozen-lockfile \
+    || { echo "pnpm install failed — retrying clean"; rm -rf node_modules; pnpm install --frozen-lockfile; }; \
+    test -x node_modules/.bin/vite
+
+COPY dashboard/ ./
+RUN mkdir -p ../src/octop/dashboard
+
+# 镜像构建跳过完整 tsc；生产打包由 vite/esbuild 完成（使用 lockfile 中的 vite）
+RUN NODE_ENV=production NODE_OPTIONS="--max-old-space-size=${NODE_MAX_OLD_SPACE_SIZE}" pnpm run build:docker
+
 FROM python:3.12-slim
 
 ENV PYTHONDONTWRITEBYTECODE=1 \
@@ -27,6 +55,7 @@ RUN --mount=type=cache,target=/root/.cache/uv \
     uv sync --no-install-project --no-dev
 
 COPY src/ ./src/
+COPY --from=frontend-builder /build/src/octop/dashboard ./src/octop/dashboard
 COPY .env.example ./
 COPY docker/docker-entrypoint.sh /usr/local/bin/docker-entrypoint.sh
 RUN chmod +x /usr/local/bin/docker-entrypoint.sh \
